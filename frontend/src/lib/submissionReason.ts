@@ -1,17 +1,17 @@
 export const submissionReasonLabel = (reason: unknown): string => {
   switch (reason) {
     case 'invalid_flag':
-      return '无效 Flag'
+      return 'Invalid flag'
     case 'own_flag':
-      return '提交了自己的 Flag'
+      return 'Submitted own flag'
     case 'missing_target_player':
-      return '缺少 target_player_id（历史规则）'
+      return 'Missing target_player_id (legacy rule)'
     case 'target_mismatch':
-      return 'target_player_id 与 Flag 归属不匹配（历史规则）'
+      return 'target_player_id does not match flag owner (legacy rule)'
     case 'flag_already_claimed_by_attacker':
-      return '该选手已提交过这个 Flag'
+      return 'Flag already claimed by this player'
     case 'success':
-      return '成功'
+      return 'Success'
     default:
       return String(reason ?? 'unknown')
   }

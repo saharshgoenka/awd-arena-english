@@ -87,7 +87,7 @@ const HistoryPage: React.FC = () => {
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error("Export failed:", err)
-      alert("导出失败，请检查网络或后端状态")
+      alert("Export failed. Please check network/backend status.")
     }
   }
 
@@ -100,11 +100,11 @@ const HistoryPage: React.FC = () => {
         const text = await resp.text()
         throw new Error(text || `HTTP ${resp.status}`)
       }
-      alert(`比赛 ${matchId} 已结束`)
+      alert(`Match ${matchId} ended`)
       loadMatches()
     } catch (err) {
       console.error('End failed:', err)
-      alert('结束比赛失败，请检查后端日志')
+      alert('Failed to end match. Check backend logs.')
     } finally {
       setEndingMatchId(null)
     }
@@ -139,7 +139,7 @@ const HistoryPage: React.FC = () => {
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error('Player code export failed:', err)
-      alert(`导出选手代码/复盘材料失败：${err instanceof Error ? err.message : '请检查后端状态'}`)
+      alert(`Failed to export player code/replay bundle: ${err instanceof Error ? err.message : 'Check backend status'}`)
     } finally {
       setExportingCodeMatchId(null)
     }
@@ -148,28 +148,28 @@ const HistoryPage: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold">历史比赛</h2>
+        <h2 className="text-2xl font-semibold">Match history</h2>
         <div className="flex items-center gap-4">
           <select 
             value={statusFilter} 
             onChange={(e) => setStatusFilter(e.target.value)}
             className="bg-slate-700 px-3 py-2 rounded-md text-sm border-none focus:ring-1 focus:ring-cyan-500"
           >
-            <option value="All">所有状态</option>
+            <option value="All">All statuses</option>
             {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <button className="px-3 py-2 rounded-md bg-slate-700 hover:bg-slate-600 transition-colors" onClick={loadMatches}>刷新</button>
+          <button className="px-3 py-2 rounded-md bg-slate-700 hover:bg-slate-600 transition-colors" onClick={loadMatches}>Refresh</button>
         </div>
       </div>
       
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-700 text-left">
-            <th className="py-2">名称</th>
-            <th className="py-2">状态</th>
-            <th className="py-2">玩家数</th>
-            <th className="py-2">创建时间</th>
-            <th className="py-2">操作</th>
+            <th className="py-2">Name</th>
+            <th className="py-2">Status</th>
+            <th className="py-2">Players</th>
+            <th className="py-2">Created</th>
+            <th className="py-2">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -183,9 +183,9 @@ const HistoryPage: React.FC = () => {
             const statusLabel = isActive
               ? m.status
               : resourcesDestroyed
-                ? `${m.status} · 已清理`
+                ? `${m.status} · cleaned`
                 : finishedStr
-                  ? `${m.status} · 待清理`
+                  ? `${m.status} · pending cleanup`
                   : m.status
             return (
               <tr 
@@ -215,7 +215,7 @@ const HistoryPage: React.FC = () => {
                     onClick={(e) => handleExport(e, rowId)}
                     className="px-3 py-1 bg-slate-600 hover:bg-cyan-600 text-white rounded text-xs transition-colors"
                   >
-                    导出 JSON
+                    Export JSON
                   </button>
                   {m.status === 'finished' && (
                     <button
@@ -223,7 +223,7 @@ const HistoryPage: React.FC = () => {
                       disabled={exportingCodeMatchId === rowId}
                       className="px-3 py-1 bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
                     >
-                      {exportingCodeMatchId === rowId ? '导出中...' : '导出选手代码/复盘材料'}
+                      {exportingCodeMatchId === rowId ? 'Exporting...' : 'Export player code/replay'}
                     </button>
                   )}
                   {isActive && (
@@ -234,7 +234,7 @@ const HistoryPage: React.FC = () => {
                       }}
                       className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs transition-colors"
                     >
-                      进入观战
+                      Open arena
                     </button>
                   )}
                   {canEnd && (
@@ -243,7 +243,7 @@ const HistoryPage: React.FC = () => {
                       disabled={endingMatchId === rowId}
                       className="px-3 py-1 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
                     >
-                      {endingMatchId === rowId ? '结束中...' : '结束比赛'}
+                      {endingMatchId === rowId ? 'Ending...' : 'End match'}
                     </button>
                   )}
                 </td>
@@ -253,7 +253,7 @@ const HistoryPage: React.FC = () => {
         </tbody>
       </table>
       {filteredMatches.length === 0 && (
-        <div className="text-center text-slate-400 py-8">暂无比赛数据</div>
+        <div className="text-center text-slate-400 py-8">No matches yet.</div>
       )}
     </div>
   )

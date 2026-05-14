@@ -1,33 +1,33 @@
-# OpenClaw AWD 裁判引擎
+# OpenClaw AWD Referee Engine
 
-## 快速开始
+## Quick start
 
-### 1. 安装依赖
+### 1. Install dependencies
 
 ```bash
 cd referee-engine
 pip install -r requirements.txt
 ```
 
-### 2. 启动服务
+### 2. Run the server
 
 ```bash
 python main.py
 ```
 
-服务将在 `http://localhost:8000` 启动
+Listening on `http://localhost:8000` by default.
 
-### 3. 测试 API
+### 3. Health check
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-## API 文档
+## API overview
 
-### 提交 Flag
+### Submit a flag
 
-```bash
+```http
 POST /api/submit
 Content-Type: application/json
 
@@ -37,24 +37,26 @@ Content-Type: application/json
 }
 ```
 
-规则说明：
-- 只有攻击阶段允许提交 Flag
-- 不允许提交自己的 Flag
-- 裁判会根据 Flag 自动识别真实归属；`target_player_id` 可选，仅作为审计字段保留
-- 同一个 Flag 可以被不同选手各自提交一次得分
-- 同一名选手对同一个 Flag 只能成功得分一次
+Rules:
 
-失败原因示例：
-- `invalid_flag`
-- `own_flag`
-- `flag_already_claimed_by_attacker`
+- Flag submission is scored only during the **attack** phase.
+- You cannot score on your own flag.
+- The referee resolves the true flag owner; `target_player_id` is optional metadata.
+- Each distinct player can score once per flag value.
+- The same attacker cannot score twice on the same flag.
 
-### 开始比赛
+Common failure reasons: `invalid_flag`, `own_flag`, `flag_already_claimed_by_attacker`.
 
-```bash
+### Start a match
+
+```http
 POST /api/matches/start
 Content-Type: application/json
+```
 
+Example body (redact secrets in real use):
+
+```json
 {
   "match": {
     "name": "Test Match",
@@ -68,14 +70,15 @@ Content-Type: application/json
     {
       "id": 1,
       "name": "Player 1",
-      "model": "[REDACTED]",
+      "model": "claude-sonnet-4-6",
       "gatewayPort": 18789
     }
   ]
 }
 ```
 
-响应:
+Example response:
+
 ```json
 {
   "match_id": "match_1710777600",
@@ -83,75 +86,40 @@ Content-Type: application/json
 }
 ```
 
-### 获取比赛状态
+### Match status
 
-```bash
+```http
 GET /api/matches/{match_id}
 ```
 
-响应:
-```json
-{
-  "match_id": "match_1710777600",
-  "status": "running",
-  "players": {
-    "1": {
-      "status": "running",
-      "cpu_usage": 25.5,
-      "memory_usage": {
-        "usage_mb": 512.0,
-        "limit_mb": 2048.0,
-        "percent": 25.0
-      }
-    }
-  }
-}
-```
+Returns overview, leaderboard hints, `events_count`, and `recent_events`.
 
-接口职责说明：
-- `GET /api/matches/{match_id}`：返回比赛总览、排行榜摘要、`events_count` 与 `recent_events`
-- `GET /api/matches/{match_id}/events`：返回事件时间线
-- `GET /api/matches/{match_id}/submissions`：返回提交事实记录
+Endpoints:
 
-当前计分链路约定：
-- `submissions` 是提交事实主记录
-- `events` 用于时间线 / 回放
-- 计分引擎当前按传入的 submission 列表计算得分，比赛运行态统一传入 `persisted_submissions`
-- `validate_submission()` 会显式返回当次 `submission_record`，提交主流程不再依赖运行时列表尾项取记录
+- `GET /api/matches/{match_id}` — overview + recent events
+- `GET /api/matches/{match_id}/events` — full timeline
+- `GET /api/matches/{match_id}/submissions` — submission audit log
 
-### 结束比赛
+Scoring notes:
 
-```bash
+- `submissions` is the source of truth for captures.
+- `events` powers timelines and replay.
+- The scoring engine consumes the persisted submission list (`persisted_submissions` at runtime).
+- `validate_submission()` returns the concrete `submission_record` for that attempt.
+
+### End a match
+
+```http
 POST /api/matches/{match_id}/end
 ```
 
-响应:
-```json
-{
-  "match_id": "match_1710777600",
-  "status": "ended"
-}
-```
+### List matches
 
-### 列出所有比赛
-
-```bash
+```http
 GET /api/matches
 ```
 
-响应:
-```json
-{
-  "matches": [
-    {
-      "match_id": "match_1710777600",
-      "status": "running"
-    }
-  ]
-}
-```
-
-### WebSocket 连接
+### WebSocket
 
 ```javascript
 const ws = new WebSocket('ws://localhost:8000/ws');
@@ -162,17 +130,9 @@ ws.onmessage = (event) => {
 };
 ```
 
-事件类型:
-- `MATCH_STARTED` - 比赛开始
-- `MATCH_ENDED` - 比赛结束
-- `READY_UPDATE` - Agent 就绪状态更新
-- `SCORE_UPDATE` - 分数更新
-- `FLAG_CAPTURED` - Flag 被夺取
-- `SERVICE_DOWN` - 服务宕机
+Event types include `MATCH_STARTED`, `MATCH_ENDED`, `READY_UPDATE`, `SCORE_UPDATE`, `FLAG_CAPTURED`, and `SERVICE_DOWN`.
 
-## 测试
-
-### 使用测试配置启动比赛
+## Tests
 
 ```bash
 curl -X POST http://localhost:8000/api/matches/start \
@@ -180,39 +140,18 @@ curl -X POST http://localhost:8000/api/matches/start \
   -d @test_config.json
 ```
 
-### 查看 API 文档
+Interactive docs: `http://localhost:8000/docs`
 
-访问 `http://localhost:8000/docs` 查看自动生成的 Swagger 文档
-
-## 目录结构
+## Layout
 
 ```
 referee-engine/
-├── main.py              # FastAPI 应用主文件
-├── requirements.txt     # Python 依赖
-├── test_config.json     # 测试配置
-└── README.md            # 本文件
+├── main.py              # FastAPI app
+├── requirements.txt
+├── test_config.json
+└── README.md
 ```
 
-## 开发
+## Extending
 
-### 添加新的 API 端点
-
-在 `main.py` 中添加新的路由:
-
-```python
-@app.post("/api/custom")
-async def custom_endpoint():
-    return {"message": "Custom endpoint"}
-```
-
-### 添加 WebSocket 事件
-
-在 `RefereeEngine` 类中调用 `broadcast()`:
-
-```python
-await referee.broadcast({
-    "type": "CUSTOM_EVENT",
-    "data": {"key": "value"}
-})
-```
+Add routes in `main.py`. Emit realtime updates from `RefereeEngine` via `await referee.broadcast({...})`.

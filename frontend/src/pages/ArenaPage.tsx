@@ -88,7 +88,7 @@ const eventTime = (timestamp: string): number => {
 
 const formatVictimLabel = (value: unknown): string => {
   const victimId = toNumber(value)
-  return victimId == null ? '无' : `P${String(victimId)}`
+  return victimId == null ? 'None' : `P${String(victimId)}`
 }
 
 const formatFlagIndexLabel = (value: unknown): string => {
@@ -98,34 +98,36 @@ const formatFlagIndexLabel = (value: unknown): string => {
 
 const formatFlagEventSuffix = (data: Record<string, unknown>): string => {
   const flagIndex = toNumber(data.flag_index)
-  return flagIndex == null ? '' : ` 的 #${String(flagIndex)} Flag`
+  return flagIndex == null ? '' : ` (flag #${String(flagIndex)})`
 }
 
 const formatArenaEvent = (event: MatchEvent): string | null => {
   const data = event.data ?? {}
   switch (event.type) {
     case 'STATUS':
-      return `状态切换: ${String(data.status ?? 'unknown')}`
+      return `Status: ${String(data.status ?? 'unknown')}`
     case 'MATCH_STARTED':
-      return `比赛开始: ${String(data.status ?? 'defense')}`
+      return `Match started: ${String(data.status ?? 'defense')}`
     case 'PHASE_CHANGE':
-      return `阶段切换: ${String(data.phase ?? 'unknown')}`
+      return `Phase: ${String(data.phase ?? 'unknown')}`
     case 'AGENT_READY':
-      return `Agent 就绪: P${String(data.player_id ?? '?')}`
+      return `Agent ready: P${String(data.player_id ?? '?')}`
     case 'FLAG_CAPTURED':
-      return `夺旗: P${String(data.attacker_id ?? data.player_id ?? '?')} -> ${formatVictimLabel(data.victim_id)}${formatFlagEventSuffix(data)}`
+      return `Capture: P${String(data.attacker_id ?? data.player_id ?? '?')} -> ${formatVictimLabel(data.victim_id)}${formatFlagEventSuffix(data)}`
     case 'FLAG_SUBMISSION':
-      return `提交: P${String(data.attacker_id ?? '?')} -> ${formatVictimLabel(data.victim_id)}${formatFlagEventSuffix(data)} (${String(data.success ? '成功' : '失败')})`
+      return `Submit: P${String(data.attacker_id ?? '?')} -> ${formatVictimLabel(data.victim_id)}${formatFlagEventSuffix(data)} (${String(data.success ? 'success' : 'fail')})`
     case 'FLAG_SUBMISSION_REJECTED':
-      return `提交被拒: P${String(data.attacker_id ?? '?')} (${submissionReasonLabel(data.reason)})`
+      return `Rejected: P${String(data.attacker_id ?? '?')} (${submissionReasonLabel(data.reason)})`
     case 'HEARTBEAT':
-      return `心跳: 剩余 ${String(data.remaining_seconds ?? '?')} 秒`
+      return `Heartbeat: ${String(data.remaining_seconds ?? '?')}s remaining`
     case 'NETWORK_OPENED':
-      return `网络打通: ${String(data.arena_network ?? '')}`
+      return `Network ready: ${String(data.arena_network ?? '')}`
     case 'FLAGS_REFRESHED':
-      return `Flag 已刷新: ${String(data.player_count ?? '?')} 个靶机`
+      return `Flags refreshed: ${String(data.player_count ?? '?')} targets`
     case 'MATCH_FINISHED':
-      return '比赛结束'
+      return 'Match finished'
+    case 'MATCH_ERROR':
+      return `Match error: ${String(data.error ?? 'unknown')}`
     case 'AGENT_STREAM':
     case 'AGENT_LOGS_COLLECTED':
       return null
@@ -222,6 +224,7 @@ const ArenaPage: React.FC = () => {
   const reconnectTimerRef = useRef<number | null>(null)
   const matchEndedRef = useRef(false)
   const matchNotFoundRef = useRef(false)
+  const [statusFetchError, setStatusFetchError] = useState<string | null>(null)
 
   useEffect(() => {
     matchEndedRef.current = matchEnded || matchInfo?.status === 'finished'
@@ -229,21 +232,47 @@ const ArenaPage: React.FC = () => {
 
   const fetchStatus = useCallback(() => {
     if (!matchId || matchNotFoundRef.current) return
-    fetchApi(`${API_BASE}/api/matches/${matchId}`)
-      .then((r) => {
+
+    const loadMatch = async () => {
+      try {
+        const r = await fetchApi(`${API_BASE}/api/matches/${matchId}`)
         if (r.status === 404) {
           matchNotFoundRef.current = true
-          return null
+          setStatusFetchError(null)
+          return
         }
-        return r.json()
-      })
-      .then((d: MatchStatus | null) => {
-        if (!d) return
+        if (!r.ok) {
+          let msg = `Could not load match (${r.status})`
+          try {
+            const body = (await r.json()) as { detail?: unknown }
+            if (typeof body.detail === 'string') {
+              msg = body.detail
+            } else if (Array.isArray(body.detail)) {
+              const first = body.detail[0] as { msg?: unknown } | undefined
+              if (first && typeof first.msg === 'string') {
+                msg = first.msg
+              }
+            }
+          } catch {
+            /* keep default msg */
+          }
+          setStatusFetchError(msg)
+          return
+        }
+        setStatusFetchError(null)
+        const d = (await r.json()) as MatchStatus
+        if (typeof d.status !== 'string' || typeof d.match_id !== 'string') {
+          setStatusFetchError('Unexpected response from referee API')
+          return
+        }
         setMatchInfo(d)
         if (d.leaderboard) setLeaderboard(toLeaderboardArray(d.leaderboard))
         if (d.status === 'finished') setMatchEnded(true)
-      })
-      .catch(() => {})
+      } catch {
+        setStatusFetchError('Network error while loading match status')
+      }
+    }
+    void loadMatch()
 
     fetchApi(`${API_BASE}/api/matches/${matchId}/submissions`)
       .then((r) => {
@@ -454,7 +483,10 @@ const ArenaPage: React.FC = () => {
   const secs = Math.floor(remaining % 60).toString().padStart(2, '0')
   const totalPlayers = matchInfo?.player_count ?? 0
   const readyCount = readyPlayers.size
-  const isInitPhase = phase === 'creating_containers' || phase === 'initializing_agents'
+  const isInitPhase =
+    phase === 'initializing' ||
+    phase === 'creating_containers' ||
+    phase === 'initializing_agents'
   const playerLabelById = new Map(leaderboard.map((row) => [row.player_id, computePlayerLabel(row)]))
   const recentSubmissions = submissions
     .slice()
@@ -475,30 +507,55 @@ const ArenaPage: React.FC = () => {
           <h1 className="text-2xl font-semibold">{matchId}</h1>
           <div className="flex items-center gap-3">
             <span className={`px-3 py-1 rounded-full text-xs font-medium ${wsConnected ? 'bg-cyan-700 text-cyan-100' : 'bg-amber-700 text-amber-100'}`}>
-              WS {wsConnected ? '已连接' : '重连中'}
+              WS {wsConnected ? 'connected' : 'reconnecting'}
             </span>
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               phase === 'defense' ? 'bg-emerald-600' :
               phase === 'attack' ? 'bg-red-600' :
               phase === 'finished' ? 'bg-slate-500' :
+              phase === 'error' ? 'bg-red-900' :
+              phase === 'aborted' ? 'bg-amber-900' :
               'bg-slate-700'
             }`}>
-              {phase === 'defense' ? '防御阶段' : phase === 'attack' ? '攻击阶段' : phase === 'finished' ? '已结束' : '初始化'}
+              {phase === 'defense' ? 'Defense' :
+                phase === 'attack' ? 'Attack' :
+                phase === 'finished' ? 'Finished' :
+                phase === 'error' ? 'Error' :
+                phase === 'aborted' ? 'Aborted' :
+                phase === 'creating_containers' ? 'Containers' :
+                phase === 'initializing_agents' ? 'Agents' :
+                phase === 'initializing' ? 'Starting' :
+                'Initializing'}
             </span>
             <button className="px-4 py-2 rounded-md bg-red-700 hover:bg-red-600 text-white" onClick={endMatch}>
-              结束比赛
+              End match
             </button>
           </div>
         </header>
+
+        {statusFetchError && (
+          <div className="bg-red-950 border border-red-800 rounded-md p-4 text-red-100 text-sm">
+            <span className="font-semibold">Cannot refresh match from referee: </span>
+            {statusFetchError}
+            <span className="block mt-2 text-red-200/90">
+              If you see this while the match page loads, set the same referee API key in local storage
+              (<code className="text-xs bg-red-900/80 px-1 rounded">REFEREE_API_KEY</code>) that you used to start the match.
+            </span>
+          </div>
+        )}
 
         {isInitPhase && (
           <div className="bg-slate-800 border border-slate-700 rounded-md p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-semibold text-slate-300">
-                {phase === 'creating_containers' ? '正在创建容器…' : '正在初始化 Agent…'}
+                {phase === 'creating_containers'
+                  ? 'Creating containers…'
+                  : phase === 'initializing_agents'
+                    ? 'Initializing agents…'
+                    : 'Checking Docker and preparing the match…'}
               </span>
               <span className="text-sm font-mono text-slate-400">
-                {readyCount} / {totalPlayers || '?'} 就绪
+                {readyCount} / {totalPlayers || '?'} ready
               </span>
             </div>
             <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
@@ -523,20 +580,20 @@ const ArenaPage: React.FC = () => {
           <div className="flex flex-col gap-4 xl:h-[calc(100vh-8rem)]">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-shrink-0">
               <div className="bg-slate-800 border border-slate-700 rounded-md p-6 flex flex-col items-center justify-center">
-                <div className="text-xs text-slate-400 mb-1">剩余时间</div>
+                <div className="text-xs text-slate-400 mb-1">Time remaining</div>
                 <div className="text-7xl font-mono text-cyan-400">{mins}:{secs}</div>
               </div>
 
               <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-md p-4">
-                <h3 className="text-sm font-semibold text-slate-400 mb-3">排行榜</h3>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3">Leaderboard</h3>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left border-b border-slate-700 text-slate-400">
                       <th className="pb-2">#</th>
-                      <th className="pb-2">选手</th>
-                      <th className="pb-2 font-mono">得分</th>
-                      <th className="pb-2">夺旗</th>
-                      <th className="pb-2">失旗</th>
+                      <th className="pb-2">Player</th>
+                      <th className="pb-2 font-mono">Score</th>
+                      <th className="pb-2">Captured</th>
+                      <th className="pb-2">Lost</th>
                       <th className="pb-2">SLA</th>
                     </tr>
                   </thead>
@@ -553,7 +610,7 @@ const ArenaPage: React.FC = () => {
                     ))}
                     {leaderboard.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="py-4 text-center text-slate-500">等待选手加入…</td>
+                        <td colSpan={6} className="py-4 text-center text-slate-500">Waiting for players…</td>
                       </tr>
                     )}
                   </tbody>
@@ -563,25 +620,25 @@ const ArenaPage: React.FC = () => {
 
             <div className="bg-slate-800 border border-slate-700 rounded-md p-4 flex-shrink-0">
               <div className="mb-3 flex items-center justify-between gap-4">
-                <h3 className="text-sm font-semibold text-slate-400">最近提交</h3>
-                <span className="text-xs text-slate-500">同一选手对同一 Flag 仅第一次成功计分</span>
+                <h3 className="text-sm font-semibold text-slate-400">Recent submissions</h3>
+                <span className="text-xs text-slate-500">Only the first successful submit per player per flag scores</span>
               </div>
               <div className={recentSubmissionsViewportClass}>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left border-b border-slate-700 text-slate-400">
-                      <th className="pb-2">时间</th>
-                      <th className="pb-2">提交者</th>
-                      <th className="pb-2">目标</th>
+                      <th className="pb-2">Time</th>
+                      <th className="pb-2">Submitter</th>
+                      <th className="pb-2">Target</th>
                       <th className="pb-2">Flag</th>
-                      <th className="pb-2">结果</th>
-                      <th className="pb-2">原因</th>
+                      <th className="pb-2">Result</th>
+                      <th className="pb-2">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
                     {recentSubmissions.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-4 text-center text-slate-500">暂无提交记录</td>
+                        <td colSpan={6} className="py-4 text-center text-slate-500">No submissions yet</td>
                       </tr>
                     ) : (
                       recentSubmissions.map((submission, index) => {
@@ -603,7 +660,7 @@ const ArenaPage: React.FC = () => {
                                 <div className="text-xs text-slate-500">{submission.flag_slot}</div>
                               )}
                             </td>
-                            <td className={`py-2 pr-3 ${success ? 'text-emerald-400' : 'text-red-400'}`}>{success ? '成功' : '失败'}</td>
+                            <td className={`py-2 pr-3 ${success ? 'text-emerald-400' : 'text-red-400'}`}>{success ? 'Success' : 'Fail'}</td>
                             <td className="py-2 pr-3 text-slate-300">{submissionReasonLabel(submission.reason)}</td>
                           </tr>
                         )
@@ -616,16 +673,16 @@ const ArenaPage: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
               <div className="bg-slate-800 border border-slate-700 rounded-md p-4 flex flex-col h-full min-h-0">
-                <h3 className="text-sm font-semibold text-slate-400 mb-3 flex-shrink-0">网络拓扑</h3>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3 flex-shrink-0">Network topology</h3>
                 <div className="flex-grow relative min-h-0">
                   <TopologyMap playerCount={totalPlayers} phase={phase} />
                 </div>
               </div>
 
               <div className="bg-slate-800 border border-slate-700 rounded-md p-4 flex flex-col h-full min-h-0">
-                <h3 className="text-sm font-semibold text-slate-400 mb-3 flex-shrink-0">事件日志</h3>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3 flex-shrink-0">Event log</h3>
                 <div className="flex-grow min-h-0 overflow-auto bg-slate-900/60 rounded-md p-3 font-mono text-xs space-y-1">
-                  {events.length === 0 && <div className="text-slate-500">暂无事件</div>}
+                  {events.length === 0 && <div className="text-slate-500">No events yet</div>}
                   {events.map((e, idx) => (
                     <div key={idx} className="text-slate-300">{e}</div>
                   ))}
@@ -636,10 +693,10 @@ const ArenaPage: React.FC = () => {
 
           <div className="bg-slate-800 border border-slate-700 rounded-md p-4 flex flex-col min-h-[520px] xl:sticky xl:top-4 xl:h-[calc(100vh-8rem)] h-full min-h-0">
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
-              <h3 className="text-sm font-semibold text-slate-400">Agent 实时思考流</h3>
+              <h3 className="text-sm font-semibold text-slate-400">Agent live stream</h3>
               <div className="flex gap-2 flex-wrap items-center justify-end">
                 {Object.keys(agentLogs).length === 0 && (
-                  <span className="text-xs text-slate-500">暂无数据</span>
+                  <span className="text-xs text-slate-500">No data</span>
                 )}
                 {Object.keys(agentLogs).map((pidStr) => {
                   const pid = parseInt(pidStr, 10)
@@ -663,7 +720,7 @@ const ArenaPage: React.FC = () => {
               mode={streamViewMode}
               onModeChange={setStreamViewMode}
               bubbles={selectedPlayerBubbles}
-              emptyText="等待 Agent 输出..."
+              emptyText="Waiting for agent output..."
             />
           </div>
         </div>
@@ -671,12 +728,12 @@ const ArenaPage: React.FC = () => {
         {matchEnded && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
             <div className="bg-slate-900 border border-slate-600 rounded-md p-8 max-w-lg w-full text-center">
-              <h2 className="text-2xl font-bold mb-4 text-cyan-400">比赛结束</h2>
-              <h3 className="text-lg mb-4">最终排行榜</h3>
+              <h2 className="text-2xl font-bold mb-4 text-cyan-400">Match finished</h2>
+              <h3 className="text-lg mb-4">Final leaderboard</h3>
               <table className="w-full text-sm mb-6">
                 <thead>
                   <tr className="border-b border-slate-700 text-slate-400">
-                    <th>#</th><th>选手</th><th>得分</th>
+                    <th>#</th><th>Player</th><th>Score</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -690,7 +747,7 @@ const ArenaPage: React.FC = () => {
                 </tbody>
               </table>
               <button className="px-6 py-2 bg-cyan-600 rounded-md" onClick={closeMatchEndedModal}>
-                关闭
+                Close
               </button>
             </div>
           </div>

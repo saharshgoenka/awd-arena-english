@@ -1,8 +1,21 @@
 services:
+  # Builds openclaw/awd-openclaw-agent:latest (alpine/openclaw + openssh-client for target-ssh).
+  # Referee waits for this one-shot job so matches do not start with a missing ssh binary.
+  awd-openclaw-agent:
+    build:
+      context: ./agent-image
+      dockerfile: Dockerfile
+    image: openclaw/awd-openclaw-agent:latest
+    command: ["sh", "-c", "echo openclaw-awd-agent-image-ok"]
+    restart: "no"
+
   referee-engine:
     build:
       context: ./referee-engine
     container_name: openclaw-referee
+    depends_on:
+      awd-openclaw-agent:
+        condition: service_completed_successfully
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - referee_data:/app/data
@@ -10,7 +23,7 @@ services:
       - OPENCLAW_DB_PATH=/app/data/openclaw.db
       - OPENCLAW_TEMPLATES_PATH=/app/data/templates.json
       - TZ=Asia/Shanghai
-      # 允许跨域（如果有直接访问后端的需要）
+      # Broad CORS for local dev when the browser hits the API directly
       - CORS_ORIGINS=*
     ports:
       - "8000:8000"

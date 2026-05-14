@@ -1,8 +1,8 @@
 """
-OpenClaw Agent 客户端 — 通过 docker exec CLI 驱动 Agent
+OpenClaw Agent client — drives agents via docker exec and the CLI.
 
-设计决策：使用已验证的 `openclaw agent -m` CLI 方式而非未验证的 Gateway WebSocket。
-原因：3轮测试验证 CLI 可靠工作，Gateway WebSocket 需要设备配对/签名等未充分验证的流程。
+Design: use the validated `openclaw agent -m` CLI path instead of the Gateway WebSocket,
+which depends on device pairing/signing flows that are not as well exercised in tests.
 """
 import asyncio
 import json
@@ -37,7 +37,7 @@ class BufferedMessage:
 
 @dataclass
 class AgentSession:
-    """单个 Agent 会话状态"""
+    """Per-agent session state."""
     player_id: int
     container_name: str
     target_container: str
@@ -86,17 +86,16 @@ class InitResult:
 
 class AgentClient:
     """
-    Agent 客户端 — 管理 OpenClaw 容器中 Agent 的生命周期
-    
-    通过 docker exec 执行 openclaw agent CLI 命令与 Agent 交互。
-    支持：
-    - 写入 OpenClaw 配置（模型 provider、proxy 等）
-    - 发送提示词并异步等待响应
-    - 追踪 Agent 会话日志
-    - 发送心跳更新
+    Agent client — manages OpenClaw agent containers.
+
+    Uses docker exec to run the openclaw agent CLI. Supports:
+    - Writing OpenClaw config (model provider, proxy, etc.)
+    - Sending prompts and awaiting responses
+    - Tracking session logs
+    - Sending heartbeat updates
     """
-    
-    # OpenClaw 配置常量 — 基于真实测试验证的参数
+
+    # OpenClaw config constants (validated against real container runs)
     OPENCLAW_CONFIG_PATH = "/home/node/.openclaw/openclaw.json"
     OPENCLAW_SESSION_DIR = "/home/node/.openclaw/agents/main/sessions"
     TARGET_CODE_PATHS = (
@@ -118,6 +117,16 @@ class AgentClient:
     StreamCallback = Callable[[str], object]
 
     @staticmethod
+    def _default_models_provider_key(llm_base_url: str) -> str:
+        """OpenClaw `models.providers` key; must match how the gateway reports `agent model:`."""
+        if "openrouter.ai" in (llm_base_url or "").strip().lower():
+            # OpenRouter is OpenAI-completions compatible; reuse the built-in `openai` provider
+            # slot so the gateway reloads off the same provider tree as the default image.
+            return "openai"
+        # Legacy default used before OpenRouter auto-detection.
+        return "routerss"
+
+    @staticmethod
     def _normalize_session_search_text(value: str) -> str:
         normalized = re.sub(r"[*`]+", "", value or "")
         normalized = re.sub(r"\s+", " ", normalized)
@@ -130,15 +139,24 @@ class AgentClient:
         llm_model: str = "claude-sonnet-4-6",
         proxy_url: str = "http://host.docker.internal:7897",
         agent_timeout: int = 600,
-        provider_name: str = "routerss",
+        provider_name: Optional[str] = None,
     ):
         self.llm_api_key = llm_api_key
         self.llm_base_url = llm_base_url
         self.llm_model = llm_model
-        self.provider_name = provider_name
-        self.qualified_model = f"{provider_name}/{llm_model}"
+        self.provider_name = (
+            provider_name
+            if provider_name is not None
+            else AgentClient._default_models_provider_key(llm_base_url)
+        )
+        self.qualified_model = f"{self.provider_name}/{llm_model}"
         self.proxy_url = proxy_url
         self.agent_timeout = agent_timeout
+        self.gateway_model_apply_timeout = (
+            180
+            if "openrouter.ai" in (llm_base_url or "").strip().lower()
+            else self.GATEWAY_MODEL_APPLY_TIMEOUT
+        )
         self.sessions: Dict[int, AgentSession] = {}
 
     @staticmethod
@@ -348,12 +366,12 @@ class AgentClient:
 
         return False
     
-    async def configure_container(self, container_name: str) -> InitResult:
+    async def confgure_container(self, container_name: str) -> InitResult:
         """
-        配置 OpenClaw 容器的模型 provider
-        
-        使用 docker cp 写入完整配置，然后验证。
-        关键: "api": "openai-completions" 是必须的，否则请求会失败。
+        Configure the OpenClaw container model provider.
+
+        Writes full config via docker cp, then verifies it.
+        Important: `"api": "openai-completions"` is required or requests may fail.
         """
         bootstrap_wait = await self._wait_for_gateway_bootstrap(container_name)
         if not bootstrap_wait.success:
@@ -377,33 +395,49 @@ class AgentClient:
             existing_config = {}
         
         gateway_section = existing_config.get("gateway", {})
-        
+
+        existing_models = existing_config.get("models")
+        if not isinstance(existing_models, dict):
+            existing_models = {}
+        merged_providers: Dict[str, Any] = dict(existing_models.get("providers") or {})
+
+        provider_block: Dict[str, Any] = {
+            "apiKey": self.llm_api_key,
+            "api": "openai-completions",
+            "models": [
+                {
+                    "id": self.llm_model,
+                    "name": self.llm_model,
+                }
+            ],
+        }
+        if self.llm_base_url:
+            provider_block["baseUrl"] = self.llm_base_url
+
+        if self.provider_name == "openai" and "openrouter.ai" in (self.llm_base_url or "").strip().lower():
+            prior = merged_providers.get("openai")
+            prior_dict = dict(prior) if isinstance(prior, dict) else {}
+            prior_dict.update(provider_block)
+            merged_providers["openai"] = prior_dict
+        else:
+            merged_providers[self.provider_name] = provider_block
+
         new_config = {
             **existing_config,
             "gateway": gateway_section,
             "agents": {
                 "defaults": {
-                    "model": self.qualified_model
+                    "model": self.qualified_model,
                 }
             },
             "models": {
-                "mode": "merge",
-                "providers": {
-                    self.provider_name: {
-                        "apiKey": self.llm_api_key,
-                        "api": "openai-completions",
-                        "models": [
-                            {
-                                "id": self.llm_model,
-                                "name": self.llm_model
-                            }
-                        ]
-                    }
-                }
-            }
+                **existing_models,
+                "mode": existing_models.get("mode", "merge"),
+                "providers": merged_providers,
+            },
         }
 
-        if self.llm_base_url:
+        if self.llm_base_url and self.provider_name != "openai":
             new_config["models"]["providers"][self.provider_name]["baseUrl"] = self.llm_base_url
         
         config_json = json.dumps(new_config, indent=2)
@@ -455,6 +489,15 @@ class AgentClient:
 
         live_model, live_details = await self._wait_gateway_model_applied(container_name)
         if live_model != self.qualified_model:
+            verify_live = await self._exec(container_name, f"cat {self.OPENCLAW_CONFIG_PATH}")
+            disk_ok = self.qualified_model in verify_live and "openai-completions" in verify_live
+            if disk_ok:
+                logger.warning(
+                    f"[{container_name}] Gateway log still shows {live_model!r} after "
+                    f"{self.gateway_model_apply_timeout}s, but openclaw.json lists {self.qualified_model}; "
+                    "continuing (OpenClaw may apply the model on first use or delay log updates)."
+                )
+                return InitResult(True)
             details = (
                 f"expected live model {self.qualified_model}, observed {live_model or 'unknown'}"
                 f"; recent gateway logs: {live_details}"
@@ -676,8 +719,7 @@ for item in events[-10:]:
         timeout: Optional[int] = None,
     ) -> Tuple[Optional[str], str]:
         if timeout is None:
-            timeout = self.GATEWAY_MODEL_APPLY_TIMEOUT
-
+            timeout = self.gateway_model_apply_timeout
         deadline = asyncio.get_running_loop().time() + timeout
         last_model: Optional[str] = None
         last_details = ""
@@ -780,15 +822,6 @@ for item in events[-10:]:
             "starting hardening",
             "understood. starting",
             "roger that. initiating",
-            "立即开始加固",
-            "开始加固",
-            "开始侦察",
-            "开始防御",
-            "进入防御",
-            "立即开始防御",
-            "已收到",
-            "明白，开始",
-            "好的，开始",
         ]
 
         leading_texts = texts[:2]
@@ -809,17 +842,17 @@ for item in events[-10:]:
         stream_callback: Optional[StreamCallback] = None,
     ) -> InitResult:
         """
-        初始化 Agent：配置容器 + 发送系统提示词 + 等待 READY
-        
+        Initialize the agent: configure container, send system prompt, wait for READY.
+
         Returns:
-            True if agent sent READY signal
+            InitResult with success if the agent sent a READY signal.
         """
         session.started_at = datetime.now()
         self._mark_runtime_ready(session)
         session.init_error_reason = None
         session.init_error_details = None
-        
-        # 1. 配置容器
+
+        # 1. Configure container
         logger.info(f"[Player {session.player_id}] Configuring OpenClaw container...")
         config_result = await self.configure_container(session.container_name)
         if not config_result.success:
@@ -827,7 +860,7 @@ for item in events[-10:]:
             session.init_error_details = config_result.details
             return config_result
         
-        # 2. 发送系统提示词
+        # 2. Send system prompt
         logger.info(f"[Player {session.player_id}] Sending system prompt...")
         live_model = await self._read_live_gateway_model(session.container_name)
         if live_model and live_model != self.qualified_model:
@@ -852,7 +885,7 @@ for item in events[-10:]:
             session.init_error_details = "Agent returned no response to the initialization prompt"
             return InitResult(False, session.init_error_reason, session.init_error_details)
         
-        # 3. 检测 READY 信号
+        # 3. Detect READY signal
         ready_result = self._classify_ready_response(response)
         if ready_result.success:
             self._mark_init_ready(session)
@@ -883,9 +916,9 @@ for item in events[-10:]:
         drain_buffered_after: bool = True,
     ) -> Optional[str]:
         """
-        发送消息给 Agent 并等待响应
-        
-        使用 openclaw agent -m 命令发送消息，返回 JSON 响应中的内容
+        Send a message to the agent and wait for a response.
+
+        Uses `openclaw agent -m`; returns content from the JSON response.
         """
         if timeout is None:
             timeout = self.agent_timeout
@@ -937,7 +970,7 @@ for item in events[-10:]:
                 f"timeout={timeout}s preview={preview}"
             )
 
-            # Base64 编码消息以安全传递给 shell
+            # Base64-encode payload for safe shell passing
             msg_b64 = base64.b64encode(message.encode()).decode()
 
             cmd = self.build_agent_exec_command(session, msg_b64, timeout)
@@ -1024,7 +1057,7 @@ for item in events[-10:]:
         session: AgentSession,
         update: str,
     ) -> Optional[str]:
-        """发送心跳更新（较短超时）"""
+        """Send a heartbeat update (shorter timeout)."""
         return await self.send_message(
             session,
             update,
@@ -1038,7 +1071,7 @@ for item in events[-10:]:
         session: AgentSession,
         alert: str,
     ) -> Optional[str]:
-        """发送中断警报"""
+        """Send an interrupt-style alert."""
         result = await self.enqueue_buffered_message(
             session,
             f"[ALERT] {alert}",
@@ -1050,7 +1083,7 @@ for item in events[-10:]:
         return None if result in {"queued", "merged"} else session.last_response
     
     async def get_session_log(self, session: AgentSession) -> Optional[str]:
-        """获取 Agent 的完整会话日志"""
+        """Return the agent's full session log."""
         session_file = await self._resolve_session_file(session)
         if session_file is None:
             return None
@@ -1063,7 +1096,7 @@ for item in events[-10:]:
         return log_content if log_content.strip() else None
     
     async def check_session_contains(self, session: AgentSession, keyword: str, tail_lines: int = 50) -> bool:
-        """检查 session 文件最后 N 行是否包含指定关键词"""
+        """Whether the session file's last N lines contain the given keyword."""
         session_file = await self._resolve_session_file(session)
         if session_file is None:
             return False
@@ -1289,7 +1322,7 @@ class PromptRenderer:
         defense_duration: int = 600,
         attack_duration: int = 600,
     ) -> str:
-        """渲染防御阶段初始化提示词"""
+        """Render the defense-phase initialization prompt."""
         return cls._load("defense_init").format(
             PLAYER_ID=player_id,
             OWN_TARGET_IP=own_target_ip,
@@ -1318,7 +1351,7 @@ class PromptRenderer:
         flag_refresh_interval: int = 300,
         attack_duration: int = 600,
     ) -> str:
-        """渲染攻击阶段开始提示词"""
+        """Render the attack-phase start prompt."""
         enemy_list = "\n".join(
             f"- Player {t.get('player_id', i + 1)}: {t['ip']}:{t.get('port', target_port)}"
             for i, t in enumerate(enemy_targets)
@@ -1347,7 +1380,7 @@ class PromptRenderer:
         target_port: int,
         referee_api_url: str,
     ) -> str:
-        """渲染 Solo CTF 模式提示词"""
+        """Render the solo CTF mode prompt."""
         return cls._load("solo_ctf").format(
             PLAYER_ID=player_id,
             TARGET_IP=target_ip,

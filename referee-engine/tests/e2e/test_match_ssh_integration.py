@@ -32,7 +32,7 @@ def _load_main_module(module_name: str):
 def _require_live_phase8_docker() -> None:
     commands = [
         ["docker", "info"],
-        ["docker", "image", "inspect", "alpine/openclaw:latest"],
+        ["docker", "image", "inspect", "openclaw/awd-openclaw-agent:latest"],
     ]
     for command in commands:
         try:
@@ -89,7 +89,7 @@ def _build_live_config(module):
         ),
         players=[module.PlayerConfig(id=1, name="P1")],
         target_image=PHASE8_TARGET_TEST_IMAGE,
-        agent_image="alpine/openclaw:latest",
+        agent_image="openclaw/awd-openclaw-agent:latest",
     )
 
 

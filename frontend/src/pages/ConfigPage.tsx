@@ -81,7 +81,7 @@ const ConfigPage: React.FC = () => {
     scoring: { attackSuccess: 100, defenseFailure: -50, slaViolation: -50 },
     flagsRefreshInterval: 5,
     targetImage: 'openclaw/ctf-target:v1',
-    agentImage: 'alpine/openclaw:latest',
+    agentImage: 'openclaw/awd-openclaw-agent:latest',
   })
 
   const attackDuration = Math.max(0, config.totalDuration - config.defenseDuration)
@@ -167,15 +167,15 @@ const ConfigPage: React.FC = () => {
 
   const testLlm = async (baseUrl: string, apiKey: string, proxy: string | undefined, model: string, isGlobal: boolean, playerId?: number) => {
     if (!baseUrl) {
-      alert('请先填写 Base URL');
+      alert('Please enter a Base URL first.');
       return;
     }
     if (!apiKey) {
-      alert('请先填写 API Key');
+      alert('Please enter an API key first.');
       return;
     }
     if (!model) {
-      alert('请先填写模型名称');
+      alert('Please enter a model name first.');
       return;
     }
 
@@ -190,12 +190,12 @@ const ConfigPage: React.FC = () => {
       });
       const data = await res.json();
       if (data.success) {
-        alert(`测试成功！延迟: ${(data.latency * 1000).toFixed(0)}ms`);
+        alert(`Test succeeded. Latency: ${(data.latency * 1000).toFixed(0)}ms`);
       } else {
-        alert(`测试失败: ${data.error}`);
+        alert(`Test failed: ${data.error}`);
       }
     } catch (e: any) {
-      alert(`测试异常: ${e.message}`);
+      alert(`Test error: ${e.message}`);
     } finally {
       if (isGlobal) setTestingGlobalLlm(false);
       else if (playerId) setTestingPlayerId(null);
@@ -263,12 +263,12 @@ const ConfigPage: React.FC = () => {
       const id = data?.match_id ?? data?.id
 
       if (!id) {
-        throw new Error('未返回比赛 ID')
+        throw new Error('No match ID returned')
       }
 
       navigate(`/arena/${id}`)
     } catch (error) {
-      const message = error instanceof Error ? error.message : '创建比赛失败'
+      const message = error instanceof Error ? error.message : 'Failed to create match'
       setStartError(message)
       setIsStarting(false)
     }
@@ -311,16 +311,16 @@ const ConfigPage: React.FC = () => {
       <section className="bg-slate-800/60 border border-slate-700 rounded-md p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-sm text-slate-200">
-            <span>模板管理:</span>
+            <span>Templates:</span>
             <select className="bg-slate-700 rounded-md px-2 py-1" value={selectedTemplate ?? ''} onChange={(e) => applyTemplate(e.target.value)}>
-              <option value="" disabled>请选择模板</option>
+              <option value="" disabled>Select a template</option>
               {templates.map((t) => (
-                <option key={t.id} value={t.id}>{t.name} — {t.playerCount} 玩者, {t.duration} 分钟</option>
+                <option key={t.id} value={t.id}>{t.name} — {t.playerCount} players, {t.duration} minutes</option>
               ))}
             </select>
           </div>
           <div className="flex gap-2">
-            <button className="px-3 py-2 rounded-md bg-cyan-600 hover:bg-cyan-500 text-white" onClick={() => setShowSave(true)}>保存为模板</button>
+            <button className="px-3 py-2 rounded-md bg-cyan-600 hover:bg-cyan-500 text-white" onClick={() => setShowSave(true)}>Save as template</button>
             <button className="px-3 py-2 rounded-md bg-slate-700 hover:bg-slate-600 text-white" onClick={() => fileRef.current?.click()}>Import</button>
             <input ref={fileRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={onImport} />
           </div>
@@ -330,26 +330,26 @@ const ConfigPage: React.FC = () => {
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-slate-800/60 border border-slate-700 rounded-md p-4 space-y-4">
-          <h3 className="text-lg font-semibold">基础配置</h3>
+          <h3 className="text-lg font-semibold">Basics</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-300">赛事名称</label>
+              <label className="block text-sm text-slate-300">Match name</label>
               <input className="w-full bg-slate-700 rounded-md px-2 py-1" value={config.matchName} onChange={(e) => update('matchName', e.target.value)} />
             </div>
             <div>
-              <label className="block text-sm text-slate-300">总时长</label>
+              <label className="block text-sm text-slate-300">Total duration (minutes)</label>
               <input type="number" className="w-full bg-slate-700 rounded-md px-2 py-1" value={config.totalDuration} onChange={(e) => update('totalDuration', Number(e.target.value))} />
             </div>
             <div>
-              <label className="block text-sm text-slate-300">防守时长</label>
+              <label className="block text-sm text-slate-300">Defense duration (minutes)</label>
               <input type="number" className="w-full bg-slate-700 rounded-md px-2 py-1" value={config.defenseDuration} onChange={(e) => update('defenseDuration', Number(e.target.value))} />
             </div>
             <div>
-              <label className="block text-sm text-slate-300">攻击时长</label>
+              <label className="block text-sm text-slate-300">Attack duration (minutes)</label>
               <input className="w-full bg-slate-700 rounded-md px-2 py-1" value={attackDuration} readOnly />
             </div>
             <div>
-              <label className="block text-sm text-slate-300">循环次数</label>
+              <label className="block text-sm text-slate-300">Repeat count</label>
               <input
                 type="number"
                 min={1}
@@ -360,13 +360,13 @@ const ConfigPage: React.FC = () => {
             </div>
             <div className="md:col-span-2 rounded-md border border-cyan-800/60 bg-cyan-950/30 px-3 py-2 text-sm text-cyan-100">
               {config.repeatCount > 1
-                ? `当前将连续执行 ${config.repeatCount} 场相同配置的比赛；每一场进入“finish-已清理”后会自动开始下一场。`
-                : '循环次数为 1 时，仅启动单场比赛。'}
+                ? `This will run ${config.repeatCount} matches back-to-back; the next run starts once the previous one is finished and cleaned up.`
+                : 'Repeat count of 1 will start a single match.'}
             </div>
           </div>
         </div>
         <div className="bg-slate-800/60 border border-slate-700 rounded-md p-4 space-y-4">
-          <h3 className="text-lg font-semibold">LLM 配置</h3>
+          <h3 className="text-lg font-semibold">LLM</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-300">Provider</label>
@@ -385,7 +385,7 @@ const ConfigPage: React.FC = () => {
               <input type="password" className="w-full bg-slate-700 rounded-md px-2 py-1" value={config.llmApiKey ?? ''} onChange={(e) => update('llmApiKey', e.target.value)} />
             </div>
             <div>
-              <label className="block text-sm text-slate-300">代理 URL</label>
+              <label className="block text-sm text-slate-300">Proxy URL</label>
               <input className="w-full bg-slate-700 rounded-md px-2 py-1" value={config.llmProxy ?? ''} onChange={(e) => update('llmProxy', e.target.value)} />
             </div>
             <div className="md:col-span-2 flex justify-end">
@@ -394,7 +394,7 @@ const ConfigPage: React.FC = () => {
                 onClick={() => testLlm(config.llmBaseUrl, config.llmApiKey ?? '', config.llmProxy, config.players[0]?.model || 'default-model', true)}
                 disabled={testingGlobalLlm}
               >
-                {testingGlobalLlm ? '测试中...' : '测试全局 API'}
+                {testingGlobalLlm ? 'Testing...' : 'Test global API'}
               </button>
             </div>
           </div>
@@ -402,9 +402,9 @@ const ConfigPage: React.FC = () => {
       </section>
 
       <section className="bg-slate-800/60 border border-slate-700 rounded-md p-4">
-        <h3 className="text-lg font-semibold mb-2">选手配置</h3>
+        <h3 className="text-lg font-semibold mb-2">Players</h3>
         <div className="flex items-center gap-2 mb-3 text-sm text-slate-300">
-          <span>选手数:</span>
+          <span>Player count:</span>
           {[2,3,4,5,6,8,10].map((n) => (
             <button key={n} className={`px-2 py-1 rounded-md ${config.playerCount===n? 'bg-slate-700': 'bg-slate-700/60'}`} onClick={() => update('playerCount', n)}>{n}</button>
           ))}
@@ -415,13 +415,13 @@ const ConfigPage: React.FC = () => {
               <div className="text-sm font-semibold">{p.name || `Player ${p.id}`}</div>
               <div>
                 <div className="flex justify-between items-center">
-                  <label className="text-xs text-slate-200">模型</label>
+                  <label className="text-xs text-slate-200">Model</label>
                   <button 
                     className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50"
                     onClick={() => testLlm(config.llmBaseUrl, p.apiKey || config.llmApiKey || '', config.llmProxy, p.model, false, p.id)}
                     disabled={testingPlayerId === p.id}
                   >
-                    {testingPlayerId === p.id ? '测试中...' : '测试可用性'}
+                    {testingPlayerId === p.id ? 'Testing...' : 'Test availability'}
                   </button>
                 </div>
                 <input className="w-full bg-slate-600 rounded-md px-2 py-1" value={p.model} onChange={(e) => {
@@ -445,11 +445,11 @@ const ConfigPage: React.FC = () => {
                 }} />
               </div>
               <div>
-                <label className="text-xs text-slate-200">网关端口</label>
+                <label className="text-xs text-slate-200">Gateway port</label>
                 <input className="w-full bg-slate-600 rounded-md px-2 py-1" value={p.gatewayPort} readOnly />
               </div>
               <div>
-                <label className="text-xs text-slate-200">后端类型</label>
+                <label className="text-xs text-slate-200">Backend</label>
                 <select
                   className="w-full bg-slate-600 rounded-md px-2 py-1"
                   value={p.backendType}
@@ -469,7 +469,7 @@ const ConfigPage: React.FC = () => {
               {p.backendType === 'hermes' && (
                 <div className="space-y-2 pl-2 border-l-2 border-amber-600/50">
                   <div>
-                    <label className="text-xs text-slate-300">镜像 (Hermes专用)</label>
+                    <label className="text-xs text-slate-300">Image (Hermes only)</label>
                     <input
                       className="w-full bg-slate-600 rounded-md px-2 py-1"
                       placeholder="hermes-agent:latest"
@@ -487,7 +487,7 @@ const ConfigPage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-300">额外环境变量 (JSON)</label>
+                    <label className="text-xs text-slate-300">Extra env (JSON)</label>
                     <input
                       className="w-full bg-slate-600 rounded-md px-2 py-1"
                       placeholder='{"KEY": "value"}'
@@ -513,14 +513,14 @@ const ConfigPage: React.FC = () => {
           ))}
         </div>
         <div className="flex space-x-2 mt-3">
-          <button className="px-3 py-2 rounded-md bg-slate-700" onClick={useSameModelAll}>将全部模型设为同一模型</button>
-          <button className="px-3 py-2 rounded-md bg-slate-700" onClick={autoFillNames}>自动生成名称</button>
+          <button className="px-3 py-2 rounded-md bg-slate-700" onClick={useSameModelAll}>Use same model for all</button>
+          <button className="px-3 py-2 rounded-md bg-slate-700" onClick={autoFillNames}>Auto-fill names</button>
         </div>
       </section>
 
       <section className="bg-slate-800/60 border border-slate-700 rounded-md p-4">
         <details>
-          <summary className="cursor-pointer text-lg font-semibold">高级配置</summary>
+          <summary className="cursor-pointer text-lg font-semibold">Advanced</summary>
           <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-300">Score weights (attack / defense / SLA)</label>
@@ -572,8 +572,8 @@ const ConfigPage: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-300">Agent image (仅用于OpenClaw默认)</label>
-              <div className="text-xs text-slate-400 mt-1">每个选手可在下方单独选择后端类型</div>
+              <label className="block text-sm text-slate-300">Agent image (OpenClaw default)</label>
+              <div className="text-xs text-slate-400 mt-1">Each player can choose a backend below.</div>
               <input
                 className="w-full bg-slate-700 rounded-md px-2 py-1"
                 value={config.agentImage ?? ''}
@@ -592,35 +592,35 @@ const ConfigPage: React.FC = () => {
             scoring: { attackSuccess: 100, defenseFailure: -50, slaViolation: -50 },
             flagsRefreshInterval: 5,
             targetImage: 'openclaw/ctf-target:v1',
-            agentImage: 'alpine/openclaw:latest',
+            agentImage: 'openclaw/awd-openclaw-agent:latest',
           } as ConfigState)
-        }}>重置</button>
-        <button className="px-4 py-2 rounded-md bg-cyan-600 text-white disabled:opacity-50" onClick={startMatch} disabled={!canStart || isStarting}>{isStarting ? '创建中...' : config.repeatCount > 1 ? '🚀 开始循环比赛' : '🚀 开始比赛'}</button>
+        }}>Reset</button>
+        <button className="px-4 py-2 rounded-md bg-cyan-600 text-white disabled:opacity-50" onClick={startMatch} disabled={!canStart || isStarting}>{isStarting ? 'Creating...' : config.repeatCount > 1 ? '🚀 Start loop' : '🚀 Start match'}</button>
       </section>
 
-      {startError && <div className="text-red-400 text-sm text-right">创建比赛失败：{startError}</div>}
+      {startError && <div className="text-red-400 text-sm text-right">Failed to create match: {startError}</div>}
 
       {showSave && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-slate-900 text-slate-100 rounded-md p-6 w-full max-w-md">
-            <h4 className="text-lg font-semibold mb-2">保存为模板</h4>
+            <h4 className="text-lg font-semibold mb-2">Save as template</h4>
             <div className="mb-3">
-              <label className="block text-sm text-slate-300">名称</label>
+              <label className="block text-sm text-slate-300">Name</label>
               <input className="w-full bg-slate-700 rounded-md px-2 py-1" value={saveName} onChange={(e) => setSaveName(e.target.value)} />
             </div>
             <div className="mb-3">
-              <label className="block text-sm text-slate-300">描述</label>
+              <label className="block text-sm text-slate-300">Description</label>
               <textarea className="w-full bg-slate-700 rounded-md px-2 py-1" value={saveDesc} onChange={(e) => setSaveDesc(e.target.value)} />
             </div>
             <div className="flex justify-end gap-2">
-              <button className="px-3 py-2 rounded-md bg-slate-700" onClick={() => setShowSave(false)}>取消</button>
+              <button className="px-3 py-2 rounded-md bg-slate-700" onClick={() => setShowSave(false)}>Cancel</button>
               <button className="px-3 py-2 rounded-md bg-cyan-600 text-white" onClick={() => {
                 fetchApi(`${API_BASE}/api/templates`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ name: saveName, description: saveDesc, config })
                 }).then(() => setShowSave(false)).catch(() => setShowSave(false))
-              }}>保存</button>
+              }}>Save</button>
             </div>
           </div>
         </div>
@@ -631,8 +631,8 @@ const ConfigPage: React.FC = () => {
             <div className="flex items-center gap-4">
               <div className="h-10 w-10 rounded-full border-4 border-cyan-500/30 border-t-cyan-400 animate-spin" />
               <div className="space-y-1">
-                <h4 className="text-lg font-semibold">正在创建比赛</h4>
-                <p className="text-sm text-slate-300">正在创建会话并启动观战页面，请勿重复点击。</p>
+                <h4 className="text-lg font-semibold">Creating match</h4>
+                <p className="text-sm text-slate-300">Creating session and opening the arena page. Please don’t click repeatedly.</p>
               </div>
             </div>
           </div>

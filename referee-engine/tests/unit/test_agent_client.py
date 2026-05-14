@@ -31,17 +31,15 @@ def test_render_defense_init_uses_metadata_first_maintenance_context():
     assert "target-ssh '<remote command>'" in rendered
     assert "target-ssh 'cat /app/app.py'" in rendered
     assert "target-ssh 'curl -sf http://localhost:3000/health'" in rendered
-    assert "维护方式：`ssh_key`" in rendered
+    assert "Maintenance mode: `ssh_key`" in rendered
     assert "MAINTENANCE_AUTH_MODE" not in rendered
     assert "MAINTENANCE_HELPER_COMMAND" not in rendered
-    assert "等待 password prompt" not in rendered
-    assert "交互式 passwd 改密码" not in rendered
     assert "ssh root@" not in rendered
     assert "ssh defender@10.200.0.1" not in rendered
     assert "ctf_target_2026" not in rendered
     assert "Flag3 / #3" in rendered
-    assert "SSRF 内部接口" in rendered
-    assert "获取路径不同、边界不同" in rendered
+    assert "cannot SSRF internal interfaces" in rendered
+    assert "extraction paths and trust boundaries differ" in rendered
 
 
 def test_render_attack_start_includes_player_status_polling_guidance():
@@ -59,12 +57,24 @@ def test_render_attack_start_includes_player_status_polling_guidance():
 
     assert "X-Player-Token: token-123" in rendered
     assert "http://host.docker.internal:8000/api/player/status" in rendered
-    assert "30-60 秒没有明显进展" in rendered
-    assert "自上次查询以来，你自己以及所有选手的分数变化" in rendered
-    assert "当前排名、与领先者分差、与前后名的分差" in rendered
-    assert "第一阶段攻击面提示" in rendered
-    assert "Flag3 倾向" in rendered
-    assert "不应再默认“一洞全收”" in rendered
+    assert "30–60 seconds" in rendered
+    assert "Score changes since your last query for you and all players" in rendered
+    assert "Current rank, gap to leader, gaps to players ahead and behind" in rendered
+    assert "Stage-one attack hints" in rendered
+    assert "**Flag3 / #3**:" in rendered
+    assert "one bug owns everything" in rendered
+
+
+def test_agent_client_openrouter_base_url_uses_openai_provider_slot_with_custom_base():
+    client = AgentClient(
+        llm_api_key="test-key",
+        llm_base_url="https://openrouter.ai/api/v1",
+        llm_model="anthropic/claude-3.5-sonnet",
+        proxy_url="",
+    )
+    assert client.provider_name == "openai"
+    assert client.qualified_model == "openai/anthropic/claude-3.5-sonnet"
+    assert client.gateway_model_apply_timeout == 180
 
 
 def test_classify_ready_response_rejects_upstream_connection_failures():
@@ -81,7 +91,9 @@ def test_classify_ready_response_rejects_upstream_connection_failures():
 def test_classify_ready_response_accepts_non_error_progress_text():
     client = AgentClient(llm_api_key="test-key")
 
-    result = client._classify_ready_response("已收到，开始侦察并加固目标环境。")
+    result = client._classify_ready_response(
+        "Received. Starting reconnaissance and hardening the target environment."
+    )
 
     assert result.success is True
     assert result.reason == "READY_FALLBACK_INTENT"
@@ -91,7 +103,7 @@ def test_classify_ready_response_rejects_hermes_timeout_payloads_even_if_prompt_
     client = AgentClient(llm_api_key="test-key")
 
     result = client._classify_ready_response(
-        "[HERMES_TIMEOUT] Command '['/opt/hermes/.venv/bin/hermes', 'chat', '-q', '立即开始加固目标并汇报']' timed out after 130 seconds"
+        "[HERMES_TIMEOUT] Command '['/opt/hermes/.venv/bin/hermes', 'chat', '-q', 'Start hardening the target and report']' timed out after 130 seconds"
     )
 
     assert result.success is False
@@ -224,12 +236,20 @@ async def test_check_session_contains_matches_markdown_formatted_prompt(monkeypa
         return "/tmp/session.json"
 
     async def fake_exec(container_name, command, timeout=60, stream_callback=None, session=None, message_kind=None, message_mode=None):
-        return '{"messages":[{"role":"user","content":"【阶段变更】**攻击阶段** 已经开始！网络现已开放。"}]}'
+        return (
+            '{"messages":[{"role":"user","content":"[Phase change] The **attack phase** has started. '
+            'The network is now open."}]}'
+        )
 
     monkeypatch.setattr(client, "_resolve_session_file", fake_resolve_session_file)
     monkeypatch.setattr(client, "_exec", fake_exec)
 
-    assert await client.check_session_contains(session, "【阶段变更】攻击阶段", tail_lines=10) is True
+    assert (
+        await client.check_session_contains(
+            session, "[Phase change] The **attack phase** has started", tail_lines=10
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -247,13 +267,21 @@ async def test_check_session_contains_falls_back_to_full_session_content(monkeyp
 
     async def fake_exec(container_name, command, timeout=60, stream_callback=None, session=None, message_kind=None, message_mode=None):
         if command.startswith("tail -n"):
-            return '{"messages":[{"role":"assistant","content":"正在分析目标..."}]}'
-        return '{"messages":[{"role":"user","content":"【阶段变更】**攻击阶段** 已经开始！网络现已开放。"}]}'
+            return '{"messages":[{"role":"assistant","content":"Analyzing target..."}]}'
+        return (
+            '{"messages":[{"role":"user","content":"[Phase change] The **attack phase** has started. '
+            'The network is now open."}]}'
+        )
 
     monkeypatch.setattr(client, "_resolve_session_file", fake_resolve_session_file)
     monkeypatch.setattr(client, "_exec", fake_exec)
 
-    assert await client.check_session_contains(session, "【阶段变更】攻击阶段", tail_lines=10) is True
+    assert (
+        await client.check_session_contains(
+            session, "[Phase change] The **attack phase** has started", tail_lines=10
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -270,7 +298,7 @@ async def test_hermes_initialize_agent_uses_extended_init_timeout(monkeypatch):
     async def fake_send_message(session_obj, message, timeout=None, stream_callback=None, message_kind="message", message_mode="normal", drain_buffered_after=True):
         observed["timeout"] = timeout
         observed["message_kind"] = message_kind
-        return "已收到，开始防御。"
+        return "Received, starting defense."
 
     monkeypatch.setattr(client, "send_message", fake_send_message)
 

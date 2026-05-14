@@ -24,13 +24,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <nav className="flex gap-4 items-center">
             <Link to="/config" className={`px-3 py-2 rounded-md text-sm font-medium ${active('/config') ? 'bg-slate-700' : 'hover:bg-slate-700'}`}>
-              配置大厅
+              Config
             </Link>
             <Link to="/history" className={`px-3 py-2 rounded-md text-sm font-medium ${active('/history') ? 'bg-slate-700' : 'hover:bg-slate-700'}`}>
-              历史比赛
+              History
             </Link>
             <Link to="/loops" className={`px-3 py-2 rounded-md text-sm font-medium ${active('/loops') ? 'bg-slate-700' : 'hover:bg-slate-700'}`}>
-              循环比赛
+              Loops
             </Link>
           </nav>
           <div className="flex items-center gap-2">
@@ -39,7 +39,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               type="password" 
               value={apiKey}
               onChange={handleApiKeyChange}
-              placeholder="Referee API Key" 
+              placeholder="Referee API key" 
               className="px-2 py-1 rounded-md bg-slate-800 border border-slate-700 text-sm focus:outline-none focus:border-cyan-500"
             />
           </div>

@@ -1,42 +1,39 @@
-# OpenClaw AWD 竞技场 (OpenClaw AWD Arena)
+# OpenClaw AWD Arena
 
-欢迎来到 **OpenClaw AWD 竞技场**！这是一个专为 AI 智能体（Agent）设计的攻防演练（Attack With Defense, AWD）平台。通过本项目，您可以轻松地配置、启动并观战由多个大语言模型驱动的 Agent 之间进行的自动化攻防对抗。
+**OpenClaw AWD Arena** is an Attack-with-Defense (AWD) lab for autonomous agents. Configure matches, launch multiple LLM-backed agents, and watch them harden targets, steal flags, and score in real time.
 
-## 📖 核心实体名词解释
+## Glossary
 
-- **OpenClaw AWD 竞技场**: 平台整体项目名称。
-- **观战前端 (Frontend)**: 基于 React 编写的 Web 用户界面，用于进行**赛事配置**、模板管理、以及实时大屏观战。
-- **裁判引擎 (Referee Engine)**: 系统的后端核心（FastAPI 实现），负责接收前端配置，管控比赛流程、计算分数，以及监听所有 Agent 的状态。
-- **轮次编排器 (Round Orchestrator)**: 内置于裁判引擎中的模块，负责根据比赛配置，在每次比赛开始前动态创建、管理并在赛后销毁各个容器实例。
-- **选手/Agent 镜像**: 即参赛的 AI Agent（默认为 `alpine/openclaw:latest`），在比赛时以独立 Docker 容器（Agent Gateway）运行。
-- **靶机 (Target Machine)**: AWD 演练的目标环境（默认为 `openclaw/ctf-target:v1`），运行各种漏洞服务及 Flag。
-- **防御期/交战期 (Defense / Attack Phase)**: 比赛的两个主要阶段。防御期 Agent 负责加固靶机，交战期开始进行互相攻击并夺取 Flag。
-
----
-
-## 🛠️ 环境依赖
-
-在部署和运行本项目之前，请确保您的系统已安装以下依赖：
-
-- **Docker**: 用于运行各个服务的容器实例。
-- **Docker Compose**: 用于一键编排并启动基础服务（前端与裁判引擎）。
-
-> *建议分配给 Docker 至少 4核 CPU 与 8GB 内存，以确保多 Agent 容器同时运行时系统的稳定性。*
+- **OpenClaw AWD Arena**: This repository and platform.
+- **Spectator frontend**: React UI for match configuration, templates, and the live arena view.
+- **Referee engine**: FastAPI backend that applies your config, runs the match lifecycle, scores flags, and streams agent status.
+- **Round orchestrator**: Module that creates Docker networks, agent containers, and target VMs per match, then tears them down afterward.
+- **Agent image**: Default `openclaw/awd-openclaw-agent:latest` — thin wrapper around `alpine/openclaw:latest` with the OpenSSH client so referee `target-ssh` and defense init succeed. Built by Compose from `agent-image/Dockerfile`.
+- **Target image**: Default `openclaw/ctf-target:v1` — vulnerable app plus flags.
+- **Defense / attack phases**: Hardening-only window, then full network where flag submission counts.
 
 ---
 
-## 🚀 部署流程
+## Requirements
 
-### 1. 克隆代码仓库
+- **Docker** and **Docker Compose** on the host.
+
+> Allocate at least **4 CPU cores** and **8 GB RAM** to Docker when several agents run together.
+
+---
+
+## Quick start
+
+### 1. Clone
 
 ```bash
 git clone https://github.com/your-org/OpenClaw-AWD.git
 cd OpenClaw-AWD
 ```
 
-### 2. 构建靶机基础镜像
+### 2. Build the target image
 
-每次比赛都会动态启动对应的靶机，我们需要先在本地构建靶机镜像 `openclaw/ctf-target:v1`：
+Targets are started per match from a local image:
 
 ```bash
 cd target-image/ctf
@@ -44,89 +41,97 @@ docker build -t openclaw/ctf-target:v1 .
 cd ../../
 ```
 
-*(注：系统默认使用的选手镜像 `alpine/openclaw:latest`，Docker 守护进程会在比赛开始时自动尝试拉取，请确保网络畅通)*
+Compose builds the default agent image (`openclaw/awd-openclaw-agent:latest`) before starting the referee; the Dockerfile pulls `alpine/openclaw:latest` as its base. Ensure outbound network access for that pull.
 
-### 3. 一键启动核心服务
-
-在项目根目录下，使用 Docker Compose 启动观战前端与裁判引擎：
+To build only the agent image:
 
 ```bash
-docker-compose up -d --build
+docker compose build awd-openclaw-agent
 ```
 
-启动完成后，将有以下两个核心服务在运行：
-- **裁判引擎**: 运行在 `http://localhost:8000`
-- **观战前端**: 运行在 `http://localhost:80` (如果是通过 Nginx 代理，直接访问 localhost 即可)
+If you set **Agent image** to plain `alpine/openclaw:latest` in the UI, init fails with `TARGET_SSH_CLIENT_MISSING` (`ssh: not found`) unless your image already includes the OpenSSH client.
 
-您可以检查服务运行状态：
+### 3. Start core services
+
 ```bash
-docker-compose ps
+docker compose up -d --build
+```
+
+- **Referee API**: `http://localhost:8000`
+- **Frontend**: `http://localhost` (port 80)
+
+Check status:
+
+```bash
+docker compose ps
 ```
 
 ---
 
-## 🎮 使用说明
+## Using the platform
 
-### 1. 访问管理后台
-打开浏览器，访问观战前端：
-👉 **http://localhost:8000**
+### 1. Open the UI
 
-> **🔒 安全提示 (Referee API Key)**
-> 默认情况下，系统在本地运行**未开启**接口鉴权，配置大厅顶部的 `Referee API Key` 输入框可留空。
-> 如果您将平台部署在公网或多团队共享环境，强烈建议在后端（`docker-compose.yml` 或运行环境）中配置环境变量 `REFEREE_API_KEY=您的密码`。开启后，必须在前端顶部输入框中填入该密码，才能启动、结束比赛或管理容器，否则将提示 `403 Forbidden`。
+Browse to **`http://localhost`** (or your published host).
 
-### 2. 赛事配置
-在前端界面的“配置大厅”或“模板管理”中，可以进行如下配置：
-- **比赛配置**: 设置比赛总时长、防御期时长等。
-- **LLM 配置**: 统一设置 Provider (如 Anthropic, OpenAI) 和 API URL。您可以设置统一的 API Key，也可以为每个选手独立设置。
-- **选手配置**: 指定参加本轮比赛的选手数量（例如 4 人）、各自使用的模型名称（如 `claude-3-opus-20240229`、`gpt-4-turbo`）。
+> **Referee API key**  
+> Local stacks often leave auth off; the “Referee API Key” field in the header can stay empty.  
+> For shared or public deployments, set `REFEREE_API_KEY` in `docker-compose.yml` (or the environment). Clients must send that value or admin actions return **403 Forbidden**.
 
-### 3. 开始比赛
-配置完成后，点击 **🚀 开始比赛**。
-后台**轮次编排器**会自动执行以下流程：
-1. 为本次比赛创建独立的 Docker 虚拟网络。
-2. 为每一名选手创建独立的选手容器（Agent Gateway）。
-3. 启动对应的靶机容器。
-4. 下发系统提示词并等待所有 Agent 就绪 (`READY`)。
-5. 比赛自动进入**防御期**，倒计时结束后进入**交战期**。
+### 2. Configure a match
 
-### 4. 实时观战
-比赛开始后，页面将自动跳转到**实时观战大屏**。您可以在大屏上监控：
-- 各选手的得分情况与排行榜。
-- 靶机 Flag 被攻陷（Captured）的实时播报。
-- 容器的运行资源（CPU/内存）使用状态。
+In **Config** or **Templates**, set duration, defense vs attack timing, LLM provider/base URL/API keys, and players (count, model names, etc.).
 
-> **💡 提示**：如果因为刷新或离开页面退出了观战大屏，可以在管理后台的“**历史记录**”页面中，找到处于活跃状态的比赛，点击对应行操作列的“**进入观战**”按钮即可重新回到实时观战大屏。
+### 3. Start a match
 
-比赛结束后，系统会自动结算分数、销毁选手与靶机容器，并将比赛日志归档以便回放。
+Click **Start match**. The orchestrator:
+
+1. Creates an isolated Docker network.
+2. Starts one agent container per player.
+3. Starts matching target containers.
+4. Sends system prompts and waits for **READY** signals.
+5. Runs the **defense** countdown, then opens the network for **attack**.
+
+### 4. Watch live
+
+The UI jumps to the live arena: scores, captures, and container stats.
+
+> If you navigate away, open **History**, pick the active match, and use **Enter arena** to return.
+
+When the match ends, containers are removed and logs are kept for replay.
 
 ---
 
-## ✅ 测试与验证流程
+## Smoke tests
 
-部署完成后，可以通过以下流程快速验证系统是否运行正常：
+### Referee health
 
-### 1. 验证裁判引擎健康状态
 ```bash
 curl http://localhost:8000/health
 ```
-预期应返回类似 `{"status": "ok"}` 的健康状态（如未配置 `/health`，请检查容器日志 `docker logs openclaw-referee`）。
 
-### 2. 验证前端访问
-打开浏览器访问 `http://localhost:8000`。如果看到“OpenClaw AWD 配置大厅”的页面，说明前端部署成功并且 Nginx 代理正常。
+Expect JSON such as `{"status":"ok"}` (see container logs with `docker logs openclaw-referee` if not).
 
-### 3. 验证 Docker 容器管理权限
-裁判引擎需要调度 Docker 创建容器。您可以发起一个测试请求（视裁判引擎具体 API 实现而定），或直接在前端界面尝试“启动比赛”。如果点击后能够通过 `docker ps` 查看到动态生成的名为 `claw_match_xxx` 相关的容器，则说明编排器（Orchestrator）与 Docker Daemon 通信正常。
+### Frontend
+
+Visit `http://localhost` and confirm the OpenClaw AWD dashboard loads.
+
+### Docker permissions
+
+Start a match from the UI and run `docker ps`; you should see `claw_match_*` / related containers appear while the match runs.
 
 ---
 
-## 🐛 常见问题 (FAQ)
+## FAQ
 
-**Q: 比赛开始后，Agent 一直未返回 READY 怎么办？**
-> A: 这通常是因为大语言模型 API 无法连通。请检查您在赛事配置中填写的 `Base URL` 和 `API Key` 是否正确，以及容器内是否能够正常访问外网或对应的 API 代理（可使用 `docker exec` 进入对应的 Agent 容器测试网络连通性）。
+**Agent stream empty / `TARGET_SSH_CLIENT_MISSING` in referee logs**  
+The OpenClaw base image may not ship `ssh`, but the referee runs `target-ssh` inside the agent container during init. Use the default `openclaw/awd-openclaw-agent:latest` from this repo (or install `openssh-client` in your custom agent image). Otherwise the match can still start with zero initialized agents and attack prompts will be skipped.
 
-**Q: 靶机镜像无法构建或超时？**
-> A: 靶机构建依赖于从 Docker Hub 拉取基础镜像（如 `bkimminich/juice-shop:latest` 等），如果遇到超时，请配置 Docker 国内镜像加速器。
+**Agents never report READY**
+Usually LLM connectivity from inside the agent container. Verify `Base URL`, API keys, and proxy reachability (`docker exec` into an agent container and test outbound HTTPS).
 
-**Q: 容器退出后，数据如何保存？**
-> A: 每轮比赛结束后，轮次编排器会自动销毁比赛用的 Docker 容器以释放资源。但选手的详细执行日志和回放数据会被归档保存在裁判引擎的数据卷（`/app/data` 或主机上的对应目录）中。
+**Target image build fails or times out**  
+Base layers are pulled from Docker Hub. Configure a registry mirror or pull images on a better network.
+
+**Where is data after containers exit?**  
+Match containers are destroyed to free resources. Logs and replay metadata live under the referee data volume (e.g. `/app/data` in the referee container and the named `referee_data` volume on the host).

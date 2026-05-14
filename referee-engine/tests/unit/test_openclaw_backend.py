@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 from backends.openclaw_backend import OpenClawBackendAdapter  # noqa: E402
 
 
-def _build_match_config(agent_image: str = "alpine/openclaw:latest"):
+def _build_match_config(agent_image: str = "openclaw/awd-openclaw-agent:latest"):
     return SimpleNamespace(
         agent_image=agent_image,
         llm=SimpleNamespace(
@@ -47,7 +47,7 @@ def test_openclaw_backend_container_spec_preserves_legacy_defaults():
 
     spec = adapter.build_agent_container_spec(match_config, player_config)
 
-    assert spec.image == "alpine/openclaw:latest"
+    assert spec.image == "openclaw/awd-openclaw-agent:latest"
     assert spec.environment["OPENAI_API_KEY"] == "global-key"
     assert spec.environment["HTTPS_PROXY"] == "http://host.docker.internal:7897"
     assert spec.environment["HTTP_PROXY"] == "http://host.docker.internal:7897"

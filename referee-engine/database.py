@@ -6,12 +6,25 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 
-DB_PATH = os.getenv("OPENCLAW_DB_PATH", os.path.join(os.path.dirname(__file__), "openclaw.db"))
+_DEFAULT_DB_FILE = os.path.join(os.path.dirname(__file__), "openclaw.db")
+
+# When tests set this to a string, it overrides env/default (see get_db_path).
+DB_PATH: Optional[str] = None
+
+
+def get_db_path() -> str:
+    """Resolve DB path at call time (tests may set module-level `DB_PATH`)."""
+    if isinstance(DB_PATH, str) and DB_PATH.strip():
+        return DB_PATH.strip()
+    return os.getenv("OPENCLAW_DB_PATH", _DEFAULT_DB_FILE)
 
 
 def _connect() -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    parent = os.path.dirname(db_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 

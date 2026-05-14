@@ -1,13 +1,12 @@
 """
-容器编排器 — Docker 容器生命周期管理
+Docker round orchestrator — container lifecycle for matches.
 
-基于真实测试验证的 OpenClaw 容器配置：
-- Agent: alpine/openclaw:latest
+Validated OpenClaw container assumptions:
+- Agent: openclaw/awd-openclaw-agent:latest (see ../agent-image/Dockerfile); OpenRouter uses the `openai` provider slot with a custom `baseUrl`.
 - Target: openclaw/ctf-target:v1
-- 关键发现: 必须通过 openclaw.json 配置自定义 provider
-  并使用 "api": "openai-completions"，否则请求会失败
-- 容器需要 HTTPS_PROXY 环境变量访问外网 LLM API
-- Gateway 在容器启动时自动启动，配置文件写入后自动重启
+- Custom provider must be set in openclaw.json with `"api": "openai-completions"` or requests may fail
+- Containers need HTTPS_PROXY to reach external LLM APIs
+- Gateway starts with the container; it reloads after config writes
 """
 import docker
 import json
@@ -41,7 +40,7 @@ CONTAINER_TIMEZONE = "Asia/Shanghai"
 
 @dataclass
 class ContainerInfo:
-    """容器信息"""
+    """Metadata for one container."""
     name: str
     container_id: str
     ip_address: str
@@ -52,7 +51,7 @@ class ContainerInfo:
 
 @dataclass
 class ArenaTopology:
-    """竞技场网络拓扑"""
+    """Arena network + container map."""
     match_id: str
     network_name: str
     containers: Dict[str, ContainerInfo] = field(default_factory=dict)
@@ -61,18 +60,18 @@ class ArenaTopology:
 
 class RoundOrchestrator:
     """
-    轮次编排器 — 管理一场比赛的所有容器
-    
-    支持两种模式：
-    1. 同步模式: create_round() / destroy_round() （原有接口）
-    2. 异步模式: async_create_arena() / async_destroy_arena() （新增）
+    Manages all containers for one match.
+
+    Two styles:
+    1. Sync: create_round() / destroy_round() (legacy)
+    2. Async: async_create_arena() / async_destroy_arena() (preferred)
     """
-    
-    # 已验证的镜像
-    DEFAULT_AGENT_IMAGE = "alpine/openclaw:latest"
+
+    # Default images used when config omits overrides
+    DEFAULT_AGENT_IMAGE = "openclaw/awd-openclaw-agent:latest"
     DEFAULT_TARGET_IMAGE = "openclaw/ctf-target:v1"
     
-    # OpenClaw 配置路径
+    # OpenClaw config path inside agent containers
     OPENCLAW_CONFIG_PATH = "/home/node/.openclaw/openclaw.json"
     
     def __init__(self, match_id: str, config: dict):
@@ -82,20 +81,20 @@ class RoundOrchestrator:
         self.topology = ArenaTopology(match_id=match_id, network_name=f"awd_{match_id}")
         self.logger = logging.getLogger(f"Orchestrator-{match_id}")
     
-    # ==================== 异步接口 (推荐) ====================
+    # ==================== Async API (preferred) ====================
     
     async def async_create_arena(self) -> ArenaTopology:
         """
-        异步创建完整竞技场
-        
-        为每个选手创建:
-        - 1个 OpenClaw Agent 容器
-        - 1个 CTF 靶机容器
-        
+        Create the full arena asynchronously.
+
+        For each player:
+        - One OpenClaw agent container
+        - One CTF target container
+
         Returns:
-            ArenaTopology with all container info
+            ArenaTopology with container metadata
         """
-        # 创建 Docker 网络
+        # Create Docker network
         network = self._create_network()
         
         players = self.config.get("players", [])
@@ -105,21 +104,21 @@ class RoundOrchestrator:
         for player in players:
             pid = player["id"]
             
-            # 创建靶机
+            # Target VM
             target_info = self._create_target_container(pid, network)
             self.topology.containers[target_info.name] = target_info
             
-            # 创建选手 Agent 容器
+            # Player agent container
             agent_info = self._create_agent_container(pid, player, llm_config, proxy_url, network)
             self.topology.containers[agent_info.name] = agent_info
         
-        # 等待容器启动
+        # Wait for containers to boot
         await asyncio.sleep(5)
         
-        # 获取所有容器 IP
+        # Refresh container IPs
         self._refresh_ips()
         
-        # 等待靶机 HTTP 就绪
+        # Wait for target HTTP health
         await self._async_wait_for_targets()
         
         self.topology.created_at = datetime.now()
@@ -131,11 +130,11 @@ class RoundOrchestrator:
         return self.topology
     
     async def async_destroy_arena(self, archive_logs: bool = True):
-        """异步销毁竞技场"""
+        """Tear down the arena asynchronously."""
         if archive_logs:
             await self._async_archive_logs()
         
-        # 停止并删除所有容器
+        # Stop and remove containers
         for name, info in self.topology.containers.items():
             try:
                 container = self.client.containers.get(name)
@@ -147,7 +146,7 @@ class RoundOrchestrator:
             except Exception as e:
                 self.logger.warning(f"Failed to remove {name}: {e}")
         
-        # 删除网络
+        # Remove Docker network
         try:
             network = self.client.networks.get(self.topology.network_name)
             network.remove()
@@ -163,13 +162,13 @@ class RoundOrchestrator:
         llm_model: str = "claude-sonnet-4-6",
     ) -> bool:
         """
-        异步配置 OpenClaw Agent 的模型 provider
-        
-        写入 openclaw.json，关键：
-        - "api": "openai-completions" (必须，否则 WAF 403)
-        - 保留现有 gateway.auth.token
+        Configure the OpenClaw agent LLM provider.
+
+        Writes openclaw.json. Critical fields:
+        - `"api": "openai-completions"` (required; otherwise WAF/403 issues)
+        - Preserve existing gateway.auth.token
         """
-        # 等待 Gateway 创建配置文件
+        # Wait for Gateway to materialize config
         for _ in range(15):
             proc = await asyncio.create_subprocess_shell(
                 f"docker exec {container_name} test -f {self.OPENCLAW_CONFIG_PATH} && echo ok",
@@ -184,7 +183,7 @@ class RoundOrchestrator:
             self.logger.error(f"[{container_name}] Config file not created")
             return False
         
-        # 读取现有配置
+        # Read existing config
         proc = await asyncio.create_subprocess_shell(
             f"docker exec {container_name} cat {self.OPENCLAW_CONFIG_PATH}",
             stdout=asyncio.subprocess.PIPE,
@@ -197,7 +196,7 @@ class RoundOrchestrator:
         except json.JSONDecodeError:
             existing = {}
         
-        # 保留 gateway token
+        # Preserve gateway token
         gateway_token = existing.get("gateway", {}).get("auth", {}).get("token", "")
         
         new_config = {
@@ -239,7 +238,7 @@ class RoundOrchestrator:
         
         await asyncio.sleep(5)
         
-        # 验证
+        # Verify write
         proc = await asyncio.create_subprocess_shell(
             f"docker exec {container_name} cat {self.OPENCLAW_CONFIG_PATH}",
             stdout=asyncio.subprocess.PIPE,
@@ -255,10 +254,10 @@ class RoundOrchestrator:
         self.logger.error(f"[{container_name}] Config verification failed")
         return False
     
-    # ==================== 同步接口 (兼容旧代码) ====================
+    # ==================== Sync API (legacy) ====================
     
     def create_round(self) -> None:
-        """同步创建竞技场（兼容旧接口）"""
+        """Create arena synchronously (legacy API)."""
         network = self._create_network()
         
         players = self.config.get("players", [])
@@ -277,7 +276,7 @@ class RoundOrchestrator:
         self.logger.info(f"Round created with {len(players)} players")
     
     def destroy_round(self) -> None:
-        """同步销毁竞技场"""
+        """Destroy arena synchronously."""
         self._sync_archive_logs()
         
         for name in list(self.topology.containers.keys()):
@@ -294,10 +293,10 @@ class RoundOrchestrator:
         except NotFound:
             pass
     
-    # ==================== 内部方法 ====================
+    # ==================== Internal helpers ====================
     
     def _create_network(self):
-        """创建 Docker 网络"""
+        """Create the Docker network."""
         try:
             match_hash = int(hashlib.md5(self.match_id.encode()).hexdigest()[:4], 16) % 256
             subnet = f"10.201.{match_hash}.0/24"
@@ -320,11 +319,11 @@ class RoundOrchestrator:
             raise
     
     def _create_target_container(self, player_id: int, network) -> ContainerInfo:
-        """创建靶机容器"""
+        """Create the target container."""
         name = f"target_{self.match_id}_{player_id}"
         maintenance_password = secrets.token_urlsafe(12)
         
-        # 为每个漏洞点生成独立 flag
+        # Per-vuln placeholder flags in env
         flags = {
             f"FLAG_{i}": f"FLAG{{{secrets.token_hex(16)}}}"
             for i in range(1, 6)
@@ -352,7 +351,7 @@ class RoundOrchestrator:
         info = ContainerInfo(
             name=name,
             container_id=_require_container_id(container.id, name),
-            ip_address="",  # 稍后填充
+            ip_address="",  # filled after refresh
             role="target",
             player_id=player_id,
         )
@@ -368,7 +367,7 @@ class RoundOrchestrator:
         proxy_url: str,
         network,
     ) -> ContainerInfo:
-        """创建 Agent 容器"""
+        """Create the agent container."""
         name = f"claw_{self.match_id}_{player_id}"
         
         env = {
@@ -407,7 +406,7 @@ class RoundOrchestrator:
         return info
     
     def _refresh_ips(self):
-        """刷新所有容器 IP"""
+        """Refresh cached IPs for all containers."""
         for name, info in self.topology.containers.items():
             try:
                 container = self.client.containers.get(name)
@@ -422,7 +421,7 @@ class RoundOrchestrator:
                 self.logger.warning(f"Failed to get IP for {name}: {e}")
     
     def _sync_wait_for_targets(self, timeout: int = 60):
-        """同步等待靶机就绪"""
+        """Block until targets answer HTTP /health (sync)."""
         import subprocess
         
         targets = [
@@ -446,7 +445,7 @@ class RoundOrchestrator:
                 time.sleep(2)
     
     async def _async_wait_for_targets(self, timeout: int = 60):
-        """异步等待靶机就绪"""
+        """Block until targets answer HTTP /health (async)."""
         targets = [
             info for info in self.topology.containers.values()
             if info.role == "target"
@@ -469,7 +468,7 @@ class RoundOrchestrator:
                 await asyncio.sleep(2)
     
     def _sync_archive_logs(self):
-        """同步归档日志"""
+        """Archive container logs to disk (sync)."""
         archive_dir = f"./logs/{self.match_id}"
         os.makedirs(archive_dir, exist_ok=True)
         
@@ -485,7 +484,7 @@ class RoundOrchestrator:
                 self.logger.warning(f"Failed to archive logs for {name}: {e}")
     
     async def _async_archive_logs(self):
-        """异步归档日志"""
+        """Archive container logs to disk (async)."""
         archive_dir = f"./logs/{self.match_id}"
         os.makedirs(archive_dir, exist_ok=True)
         
@@ -504,10 +503,10 @@ class RoundOrchestrator:
             except Exception as e:
                 self.logger.warning(f"Failed to archive logs for {name}: {e}")
     
-    # ==================== 查询接口 ====================
+    # ==================== Query helpers ====================
     
     def get_container_stats(self) -> Dict[int, dict]:
-        """获取所有容器资源使用统计"""
+        """CPU/memory stats for all agent containers."""
         stats = {}
         
         for name, info in self.topology.containers.items():
@@ -546,7 +545,7 @@ class RoundOrchestrator:
         return stats
     
     def get_target_info(self) -> Dict[int, dict]:
-        """获取所有靶机信息"""
+        """Basic info for all target containers."""
         targets = {}
         for name, info in self.topology.containers.items():
             if info.role == "target":

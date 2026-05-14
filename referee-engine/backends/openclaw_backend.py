@@ -28,7 +28,7 @@ class OpenClawBackendAdapter(AgentBackendAdapter):
             environment.update({str(key): str(value) for key, value in extra_env.items()})
 
         return BackendContainerSpec(
-            image=image_override or config.agent_image or "alpine/openclaw:latest",
+            image=image_override or config.agent_image or "openclaw/awd-openclaw-agent:latest",
             environment=environment,
         )
 

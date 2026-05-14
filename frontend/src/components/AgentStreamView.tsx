@@ -317,7 +317,7 @@ const bubbleFromJsonChunk = (chunk: ParsedJsonChunk, index: number): AgentBubble
     bubbles.push({
       id: `json-thought-${index}`,
       type: 'thought',
-      title: '思考',
+      title: 'Thought',
       body: chunk.assistantText.join('\n\n'),
       tone: 'info',
       meta: commonMeta,
@@ -328,7 +328,7 @@ const bubbleFromJsonChunk = (chunk: ParsedJsonChunk, index: number): AgentBubble
     bubbles.push({
       id: `json-tool-${index}-${toolIndex}`,
       type: 'tool_call',
-      title: '操作',
+      title: 'Tool call',
       body: summarizeText(toolCall, 500),
       tone: 'neutral',
     })
@@ -338,7 +338,7 @@ const bubbleFromJsonChunk = (chunk: ParsedJsonChunk, index: number): AgentBubble
     bubbles.push({
       id: `json-result-${index}-${toolIndex}`,
       type: 'tool_result',
-      title: '结果',
+      title: 'Tool result',
       body: summarizeText(toolResult, 600),
       tone: 'success',
     })
@@ -348,7 +348,7 @@ const bubbleFromJsonChunk = (chunk: ParsedJsonChunk, index: number): AgentBubble
     bubbles.push({
       id: `json-note-${index}-${noteIndex}`,
       type: 'action',
-      title: '行为',
+      title: 'Action',
       body: note,
       tone: 'neutral',
     })
@@ -358,7 +358,7 @@ const bubbleFromJsonChunk = (chunk: ParsedJsonChunk, index: number): AgentBubble
     bubbles.push({
       id: `json-error-${index}-${errorIndex}`,
       type: 'error',
-      title: '异常',
+      title: 'Error',
       body: summarizeText(error, 500),
       tone: 'danger',
     })
@@ -428,12 +428,12 @@ export const buildAgentBubbles = (lines: string[], mode: StreamViewMode): AgentB
   entries.forEach(({ kind, text }) => {
     const nextType = kind
     const nextTitle =
-      nextType === 'thought' ? '思考' :
-      nextType === 'action' ? '行为' :
-      nextType === 'tool_call' ? '操作' :
-      nextType === 'tool_result' ? '结果' :
-      nextType === 'system' ? '系统' :
-      nextType === 'error' ? '异常' :
+      nextType === 'thought' ? 'Thought' :
+      nextType === 'action' ? 'Action' :
+      nextType === 'tool_call' ? 'Tool call' :
+      nextType === 'tool_result' ? 'Tool result' :
+      nextType === 'system' ? 'System' :
+      nextType === 'error' ? 'Error' :
       'Raw'
 
     const nextTone: AgentBubble['tone'] =

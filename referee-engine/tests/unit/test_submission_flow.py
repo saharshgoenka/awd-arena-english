@@ -76,7 +76,7 @@ def _minimal_config_dict():
         "flags": {"refreshInterval": 300, "format": "flag{{{hash}}}"},
         "network": {"arenaSubnet": "172.20.0.0/16", "mgmtSubnetPrefix": "172.21"},
         "target_image": "openclaw/ctf-target:v1",
-        "agent_image": "alpine/openclaw:latest",
+        "agent_image": "openclaw/awd-openclaw-agent:latest",
     }
 
 
@@ -571,9 +571,10 @@ async def test_submit_flag_returns_player_feedback_with_status_query_hint(monkey
     assert result["success"] is True
     assert result["player_feedback"] == {
         "summary": (
-            "Flag 提交成功，分数已计入。"
-            "若你当前主要依赖 1/2 号 flag 得分，建议下一步优先寻找更高价值的 3/4 号 flag。"
-            "重点检查 SSRF、内网接口、管理面、敏感凭据、高权限文件与提权链。 You gained 100 points."
+            "Flag accepted; points recorded. "
+            "If you have been scoring mainly on flags #1/#2, consider hunting higher-value #3/#4 next. "
+            "Focus on SSRF, internal/admin interfaces, secrets, high-privilege files, and privilege chains. "
+            "You gained 100 points."
         ),
         "status_query_recommended": True,
         "status_query_hint": (
@@ -687,7 +688,7 @@ async def test_send_attack_keepalive_enqueues_buffered_message_without_advancing
     assert call["dedupe_key"] == "attack_keepalive"
     assert call["merge_strategy"] == "replace"
     assert '"phase": "attack"' in call["message"]
-    assert "请你根据最新场况，持续攻击对手，加固自己靶机的防御。" in call["message"]
+    assert "Use this to keep attacking opponents and hardening your own target." in call["message"]
     assert match.player_status_checkpoints[1] == {
         "queried_at": "baseline-query",
         "scores_by_player": {
@@ -1315,9 +1316,10 @@ async def test_submit_flag_scores_even_when_declared_target_mismatches(monkeypat
     assert match.players[2].defense_score == -50
     assert result["player_feedback"] == {
         "summary": (
-            "Flag 提交成功，分数已计入。"
-            "若你当前主要依赖 1/2 号 flag 得分，建议下一步优先寻找更高价值的 3/4 号 flag。"
-            "重点检查 SSRF、内网接口、管理面、敏感凭据、高权限文件与提权链。 You gained 100 points."
+            "Flag accepted; points recorded. "
+            "If you have been scoring mainly on flags #1/#2, consider hunting higher-value #3/#4 next. "
+            "Focus on SSRF, internal/admin interfaces, secrets, high-privilege files, and privilege chains. "
+            "You gained 100 points."
         ),
         "status_query_recommended": True,
         "status_query_hint": (
@@ -1376,9 +1378,10 @@ async def test_submit_endpoint_returns_player_feedback_via_http(monkeypatch):
     assert payload["reason"] == "success"
     assert payload["player_feedback"] == {
         "summary": (
-            "Flag 提交成功，分数已计入。"
-            "若你当前主要依赖 1/2 号 flag 得分，建议下一步优先寻找更高价值的 3/4 号 flag。"
-            "重点检查 SSRF、内网接口、管理面、敏感凭据、高权限文件与提权链。 You gained 100 points."
+            "Flag accepted; points recorded. "
+            "If you have been scoring mainly on flags #1/#2, consider hunting higher-value #3/#4 next. "
+            "Focus on SSRF, internal/admin interfaces, secrets, high-privilege files, and privilege chains. "
+            "You gained 100 points."
         ),
         "status_query_recommended": True,
         "status_query_hint": (

@@ -16,7 +16,7 @@ from backends.hermes_backend import HermesAgentClient, HermesBackendAdapter  # n
 
 def _build_match_config():
     return SimpleNamespace(
-        agent_image="alpine/openclaw:latest",
+        agent_image="openclaw/awd-openclaw-agent:latest",
         llm=SimpleNamespace(
             apiKey="global-key",
             baseUrl="https://example.test/v1",

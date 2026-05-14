@@ -1,11 +1,11 @@
 """
-Flag 管理器、SLA 检查器和计分引擎
+Flag manager, SLA checker, and scoring engine.
 
-改进：
-- 全部异步化（asyncio 兼容）
-- Flag 注入通过 docker exec 到容器内 SQLite（而非直连文件系统）
-- SLA 检查器通过 HTTP 检查靶机存活
-- 支持 Flag 定时刷新
+Design notes:
+- asyncio-friendly async paths
+- Flag injection via docker exec + sqlite inside targets (not host FS mounts)
+- SLA checks use HTTP health against targets
+- Supports periodic flag refresh
 """
 import asyncio
 import base64
@@ -56,10 +56,10 @@ class PlayerState:
 
 class FlagManager:
     """
-    Flag 管理器 — 生成、注入、验证 Flag
-    
-    Flag 格式: FLAG{player_id_random_hex_32}
-    注入方式: docker exec sqlite3 命令写入靶机数据库
+    Generate, inject, and validate flags.
+
+    Format: FLAG{random_hex_32}
+    Injection: docker exec sqlite3 against the target database.
     """
     
     def __init__(self, scoring_config: Optional[Dict] = None):
@@ -348,9 +348,9 @@ class FlagManager:
 
 class SLAChecker:
     """
-    SLA 检查器 — 定期检查靶机服务存活
-    
-    每分钟 HTTP GET /health，不返回 200 则算宕机
+    Periodically checks target HTTP health.
+
+    Every interval: HTTP GET /health; non-200 counts as downtime.
     """
     
     def __init__(self, check_interval: int = 60, penalty_per_minute: int = 50):
@@ -363,7 +363,7 @@ class SLAChecker:
         self,
         players: Dict[int, PlayerState],
     ) -> Dict[int, bool]:
-        """检查所有靶机 SLA — 并行 docker exec curl，8 人赛从串行 80s 降至 10s"""
+        """Check SLA for all targets — parallel docker exec curl."""
         
         async def _check_one(player_id: int, player: PlayerState) -> Tuple[int, bool]:
             health_ok = False
@@ -426,7 +426,7 @@ class SLAChecker:
         players: Dict[int, PlayerState],
         broadcast_callback=None,
     ) -> asyncio.Task:
-        """启动 SLA 检查循环"""
+        """Start the SLA polling loop."""
         self._running = True
         self._task = asyncio.create_task(
             self._check_loop(players, broadcast_callback)
@@ -438,7 +438,7 @@ class SLAChecker:
         players: Dict[int, PlayerState],
         broadcast_callback=None,
     ):
-        """SLA 检查主循环"""
+        """SLA polling loop body."""
         while self._running:
             try:
                 results = await self.check_all(players)
@@ -465,16 +465,14 @@ class SLAChecker:
             await asyncio.sleep(self.check_interval)
     
     def stop(self):
-        """停止 SLA 检查"""
+        """Stop SLA polling."""
         self._running = False
         if self._task:
             self._task.cancel()
 
 
 class ScoringEngine:
-    """
-    计分引擎 — 实时计算和汇总分数
-    """
+    """Computes live scores from submission history."""
     
     def __init__(self, scoring_config: Optional[Dict] = None):
         self.config = scoring_config or {
@@ -488,10 +486,10 @@ class ScoringEngine:
         players: Dict[int, PlayerState],
         submissions: List[Dict],
     ) -> Dict[int, Dict]:
-        """根据提交记录更新所有选手分数"""
+        """Recompute all player scores from submissions."""
         
         for player_id, player in players.items():
-            # 重新计算攻击得分
+            # Attack score from successful steals
             attack_count = sum(
                 1 for sub in submissions
                 if sub["attacker_id"] == player_id and sub["success"]
@@ -499,7 +497,7 @@ class ScoringEngine:
             player.attack_score = attack_count * self.config["attackSuccess"]
             player.flags_captured = attack_count
             
-            # 重新计算防御失分
+            # Defense penalties from flags lost
             defense_lost = sum(
                 1 for sub in submissions
                 if sub["victim_id"] == player_id and sub["success"]
@@ -507,17 +505,17 @@ class ScoringEngine:
             player.defense_score = defense_lost * self.config["defenseFailure"]
             player.flags_lost = defense_lost
             
-            # 总分 = 攻击 + 防御 + SLA
+            # Total = attack + defense + SLA
             player.score = player.attack_score + player.defense_score + player.sla_score
         
-        # 返回排行榜
+        # Leaderboard snapshot
         return self.get_leaderboard(players)
     
     def get_leaderboard(
         self,
         players: Dict[int, PlayerState],
     ) -> Dict[int, Dict]:
-        """获取排行榜（按总分降序）"""
+        """Leaderboard sorted by total score descending."""
         leaderboard = {}
         for player_id, player in sorted(
             players.items(),

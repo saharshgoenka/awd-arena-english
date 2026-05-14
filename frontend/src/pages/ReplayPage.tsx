@@ -137,29 +137,29 @@ const formatEvent = (event: EventItem): string => {
   const data = event.data ?? {}
   switch (event.type) {
     case 'STATUS':
-      return `状态切换: ${String(data.status ?? 'unknown')}`
+      return `Status: ${String(data.status ?? 'unknown')}`
     case 'MATCH_STARTED':
-      return `比赛开始: ${String(data.status ?? 'defense')}`
+      return `Match started: ${String(data.status ?? 'defense')}`
     case 'PHASE_CHANGE':
-      return `阶段切换: ${String(data.phase ?? 'unknown')}`
+      return `Phase: ${String(data.phase ?? 'unknown')}`
     case 'AGENT_READY':
-      return `Agent 就绪: P${String(data.player_id ?? '?')}`
+      return `Agent ready: P${String(data.player_id ?? '?')}`
     case 'FLAG_CAPTURED':
-      return `夺旗: P${String(data.attacker_id ?? data.player_id ?? '?')} -> ${formatVictimLabel(data.victim_id)}${formatFlagEventSuffix(data)}`
+      return `Capture: P${String(data.attacker_id ?? data.player_id ?? '?')} -> ${formatVictimLabel(data.victim_id)}${formatFlagEventSuffix(data)}`
     case 'FLAG_SUBMISSION':
-      return `提交: P${String(data.attacker_id ?? '?')} -> ${formatVictimLabel(data.victim_id)}${formatFlagEventSuffix(data)} (${String(data.success ? '成功' : '失败')})`
+      return `Submit: P${String(data.attacker_id ?? '?')} -> ${formatVictimLabel(data.victim_id)}${formatFlagEventSuffix(data)} (${String(data.success ? 'success' : 'fail')})`
     case 'FLAG_SUBMISSION_REJECTED':
-      return `提交被拒: P${String(data.attacker_id ?? '?')} (${submissionReasonLabel(data.reason)})`
+      return `Rejected: P${String(data.attacker_id ?? '?')} (${submissionReasonLabel(data.reason)})`
     case 'HEARTBEAT':
-      return `心跳: 剩余 ${String(data.remaining_seconds ?? '?')} 秒`
+      return `Heartbeat: ${String(data.remaining_seconds ?? '?')}s remaining`
     case 'NETWORK_OPENED':
-      return `网络打通: ${String(data.arena_network ?? '')}`
+      return `Network ready: ${String(data.arena_network ?? '')}`
     case 'AGENT_STREAM':
-      return `Agent 输出: P${String(data.player_id ?? '?')}`
+      return `Agent output: P${String(data.player_id ?? '?')}`
     case 'AGENT_LOGS_COLLECTED':
-      return 'Agent 思考日志已归档'
+      return 'Agent logs archived'
     case 'MATCH_FINISHED':
-      return '比赛结束'
+      return 'Match finished'
     default:
       return JSON.stringify(data)
   }
@@ -172,7 +172,7 @@ const eventTime = (timestamp: string): number => {
 
 const formatVictimLabel = (value: unknown): string => {
   const victimId = toNumber(value)
-  return victimId == null ? '无' : `P${String(victimId)}`
+  return victimId == null ? 'None' : `P${String(victimId)}`
 }
 
 const formatFlagIndexLabel = (value: unknown): string => {
@@ -182,7 +182,7 @@ const formatFlagIndexLabel = (value: unknown): string => {
 
 const formatFlagEventSuffix = (data: Record<string, unknown>): string => {
   const flagIndex = toNumber(data.flag_index)
-  return flagIndex == null ? '' : ` 的 #${String(flagIndex)} Flag`
+  return flagIndex == null ? '' : ` (flag #${String(flagIndex)})`
 }
 
 const splitAgentLog = (value: string): string[] => value.split(/\r?\n/)
@@ -427,7 +427,7 @@ const ReplayPage: React.FC = () => {
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4">
       <div className="max-w-7xl mx-auto space-y-6">
         <header className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold">回放 — {matchId}</h1>
+          <h1 className="text-2xl font-semibold">Replay — {matchId}</h1>
           <div className="flex items-center gap-3">
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               snapshot.phase === 'defense' ? 'bg-emerald-600' :
@@ -435,9 +435,9 @@ const ReplayPage: React.FC = () => {
               snapshot.phase === 'finished' ? 'bg-slate-500' :
               'bg-slate-700'
             }`}>
-              {snapshot.phase === 'defense' ? '防御阶段' : snapshot.phase === 'attack' ? '攻击阶段' : snapshot.phase === 'finished' ? '已结束' : '初始化'}
+              {snapshot.phase === 'defense' ? 'Defense' : snapshot.phase === 'attack' ? 'Attack' : snapshot.phase === 'finished' ? 'Finished' : 'Initializing'}
             </span>
-            <Link to="/history" className="px-3 py-2 rounded-md bg-slate-700 hover:bg-slate-600">返回历史列表</Link>
+            <Link to="/history" className="px-3 py-2 rounded-md bg-slate-700 hover:bg-slate-600">Back to history</Link>
           </div>
         </header>
 
@@ -448,7 +448,7 @@ const ReplayPage: React.FC = () => {
               className="px-3 py-1.5 rounded-md bg-cyan-700 hover:bg-cyan-600 text-sm"
               disabled={events.length === 0}
             >
-              {playing ? '暂停' : '播放'}
+              {playing ? 'Pause' : 'Play'}
             </button>
             <button
               onClick={() => {
@@ -457,7 +457,7 @@ const ReplayPage: React.FC = () => {
               }}
               className="px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-sm"
             >
-              重置
+              Reset
             </button>
             <select
               value={speed}
@@ -488,9 +488,9 @@ const ReplayPage: React.FC = () => {
           <div className="bg-slate-800 border border-slate-700 rounded-md p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-semibold text-slate-300">
-                {snapshot.phase === 'creating_containers' ? '回放：创建容器阶段' : '回放：初始化 Agent 阶段'}
+                {snapshot.phase === 'creating_containers' ? 'Replay: creating containers' : 'Replay: initializing agents'}
               </span>
-              <span className="text-sm font-mono text-slate-400">{readyCount} / {totalPlayers || '?'} 就绪</span>
+              <span className="text-sm font-mono text-slate-400">{readyCount} / {totalPlayers || '?'} ready</span>
             </div>
             <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
               <div
@@ -505,20 +505,20 @@ const ReplayPage: React.FC = () => {
           <div className="flex flex-col gap-4 xl:h-[calc(100vh-8rem)]">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-shrink-0">
               <div className="bg-slate-800 border border-slate-700 rounded-md p-6 flex flex-col items-center justify-center">
-                <div className="text-xs text-slate-400 mb-1">回放剩余时间</div>
+                <div className="text-xs text-slate-400 mb-1">Replay time remaining</div>
                 <div className="text-7xl font-mono text-cyan-400">{mins}:{secs}</div>
               </div>
 
               <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-md p-4">
-                <h3 className="text-sm font-semibold text-slate-400 mb-3">回放排行榜</h3>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3">Replay leaderboard</h3>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left border-b border-slate-700 text-slate-400">
                       <th className="pb-2">#</th>
-                      <th className="pb-2">选手</th>
-                      <th className="pb-2 font-mono">得分</th>
-                      <th className="pb-2">夺旗</th>
-                      <th className="pb-2">失旗</th>
+                      <th className="pb-2">Player</th>
+                      <th className="pb-2 font-mono">Score</th>
+                      <th className="pb-2">Captured</th>
+                      <th className="pb-2">Lost</th>
                       <th className="pb-2">SLA</th>
                     </tr>
                   </thead>
@@ -535,7 +535,7 @@ const ReplayPage: React.FC = () => {
                     ))}
                     {snapshot.leaderboard.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="py-4 text-center text-slate-500">暂无积分数据</td>
+                        <td colSpan={6} className="py-4 text-center text-slate-500">No leaderboard data yet</td>
                       </tr>
                     )}
                   </tbody>
@@ -545,25 +545,25 @@ const ReplayPage: React.FC = () => {
 
             <div className="bg-slate-800 border border-slate-700 rounded-md p-4 flex-shrink-0">
               <div className="mb-3 flex items-center justify-between gap-4">
-                <h3 className="text-sm font-semibold text-slate-400">提交记录（回放时点）</h3>
-                <span className="text-xs text-slate-500">同一选手对同一 Flag 仅第一次成功计分</span>
+                <h3 className="text-sm font-semibold text-slate-400">Submissions (at this time)</h3>
+                <span className="text-xs text-slate-500">Only the first successful submit per player per flag scores</span>
               </div>
               <div className={recentSubmissionsViewportClass}>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left border-b border-slate-700 text-slate-400">
-                      <th className="pb-2">时间</th>
-                      <th className="pb-2">提交者</th>
-                      <th className="pb-2">目标</th>
+                      <th className="pb-2">Time</th>
+                      <th className="pb-2">Submitter</th>
+                      <th className="pb-2">Target</th>
                       <th className="pb-2">Flag</th>
-                      <th className="pb-2">结果</th>
-                      <th className="pb-2">原因</th>
+                      <th className="pb-2">Result</th>
+                      <th className="pb-2">Reason</th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleSubmissions.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-4 text-center text-slate-500">当前回放时点暂无提交记录</td>
+                        <td colSpan={6} className="py-4 text-center text-slate-500">No submissions at this time</td>
                       </tr>
                     ) : (
                       visibleSubmissions.map((submission, index) => {
@@ -585,7 +585,7 @@ const ReplayPage: React.FC = () => {
                                 <div className="text-xs text-slate-500">{submission.flag_slot}</div>
                               )}
                             </td>
-                            <td className={`py-2 pr-3 ${success ? 'text-emerald-400' : 'text-red-400'}`}>{success ? '成功' : '失败'}</td>
+                            <td className={`py-2 pr-3 ${success ? 'text-emerald-400' : 'text-red-400'}`}>{success ? 'Success' : 'Fail'}</td>
                             <td className="py-2 pr-3 text-slate-300">{submissionReasonLabel(submission.reason)}</td>
                           </tr>
                         )
@@ -598,15 +598,15 @@ const ReplayPage: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
               <div className="bg-slate-800 border border-slate-700 rounded-md p-4 flex flex-col h-full min-h-0">
-                <h3 className="text-sm font-semibold text-slate-400 mb-3 flex-shrink-0">网络拓扑（回放时点）</h3>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3 flex-shrink-0">Network topology (at this time)</h3>
                 <div className="flex-grow relative min-h-0">
                   <TopologyMap playerCount={snapshot.playerCount} phase={snapshot.phase} />
                 </div>
               </div>
               <div className="bg-slate-800 border border-slate-700 rounded-md p-4 flex flex-col h-full min-h-0">
-                <h3 className="text-sm font-semibold text-slate-400 mb-3 flex-shrink-0">事件时间线</h3>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3 flex-shrink-0">Event timeline</h3>
                 <div className="flex-grow min-h-0 overflow-auto bg-slate-900/60 rounded-md p-3 font-mono text-xs space-y-1">
-                  {events.length === 0 && <div className="text-slate-500">暂无事件</div>}
+                  {events.length === 0 && <div className="text-slate-500">No events yet</div>}
                   {events.map((e, idx) => {
                     const active = idx === cursor - 1
                     const visible = idx < cursor
@@ -626,10 +626,10 @@ const ReplayPage: React.FC = () => {
 
           <div className="bg-slate-800 border border-slate-700 rounded-md p-4 flex flex-col min-h-[520px] xl:sticky xl:top-4 xl:h-[calc(100vh-8rem)] h-full min-h-0">
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
-              <h3 className="text-sm font-semibold text-slate-400">Agent 思考流（回放）</h3>
+              <h3 className="text-sm font-semibold text-slate-400">Agent stream (replay)</h3>
               <div className="flex gap-2 flex-wrap items-center justify-end">
                 {Object.keys(snapshot.agentLogs).length === 0 && (
-                  <span className="text-xs text-slate-500">当前时点暂无数据</span>
+                  <span className="text-xs text-slate-500">No data at this time</span>
                 )}
                 {Object.keys(snapshot.agentLogs).map((pidStr) => {
                   const pid = Number(pidStr)
@@ -654,7 +654,7 @@ const ReplayPage: React.FC = () => {
               mode={streamViewMode}
               onModeChange={setStreamViewMode}
               bubbles={selectedPlayerBubbles}
-              emptyText="等待 Agent 输出..."
+              emptyText="Waiting for agent output..."
             />
           </div>
         </div>

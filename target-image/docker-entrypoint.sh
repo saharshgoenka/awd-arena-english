@@ -3,7 +3,7 @@ set -e
 
 echo "[AWD Target] Starting initialization..."
 
-# 1. 配置 SSH 密码（从环境变量读取）
+# 1. Configure SSH password from environment
 if [ -n "$SSH_PASSWORD" ]; then
     echo "juice:$SSH_PASSWORD" | chpasswd
     echo "[AWD Target] SSH password configured for user 'juice'"
@@ -11,7 +11,7 @@ else
     echo "[AWD Target] WARNING: SSH_PASSWORD not set, using default password"
 fi
 
-# 2. 初始化 Arena 数据库
+# 2. Initialize arena database
 ARENA_DB="/app/arena/arena.db"
 
 if [ ! -f "$ARENA_DB" ]; then
@@ -24,11 +24,11 @@ else
     echo "[AWD Target] Arena database already exists"
 fi
 
-# 3. 启动 SSH 服务
+# 3. Start SSH
 echo "[AWD Target] Starting SSH service..."
 service ssh start
 
-# 4. 打印启动信息
+# 4. Banner
 echo "=========================================="
 echo "OpenClaw AWD Target Configuration"
 echo "=========================================="
@@ -38,6 +38,6 @@ echo "SSH User:         juice"
 echo "Arena Database:   $ARENA_DB"
 echo "=========================================="
 
-# 5. 启动 Juice Shop（使用原始 entrypoint）
+# 5. Start Juice Shop (upstream entrypoint)
 echo "[AWD Target] Starting Juice Shop..."
 exec npm start

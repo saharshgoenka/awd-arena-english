@@ -50,7 +50,7 @@ def _phase8_config_payload():
         "flags": {"refreshInterval": 300, "format": "flag{{{hash}}}"},
         "network": {"arenaSubnet": "172.20.0.0/16", "mgmtSubnetPrefix": "172.21"},
         "target_image": "openclaw/ctf-target:v1",
-        "agent_image": "alpine/openclaw:latest",
+        "agent_image": "openclaw/awd-openclaw-agent:latest",
     }
 
 

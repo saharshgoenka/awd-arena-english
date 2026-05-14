@@ -56,7 +56,7 @@ const LoopMatchesPage: React.FC = () => {
       }
       await loadLoops()
     } catch (error) {
-      alert(`停止循环比赛失败：${error instanceof Error ? error.message : '未知错误'}`)
+      alert(`Failed to stop loop: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setStoppingLoopId(null)
     }
@@ -66,18 +66,18 @@ const LoopMatchesPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">循环比赛管理</h2>
-          <p className="mt-1 text-sm text-slate-400">查看循环比赛进度，并在需要时停止后续自动开赛。</p>
+          <h2 className="text-2xl font-semibold">Loop matches</h2>
+          <p className="mt-1 text-sm text-slate-400">Track loop progress and stop future runs when needed.</p>
         </div>
-        <button className="rounded-md bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600" onClick={loadLoops}>刷新</button>
+        <button className="rounded-md bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600" onClick={loadLoops}>Refresh</button>
       </div>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {loops.map((loop) => {
           const progressPercent = loop.repeat_count > 0 ? Math.min(100, (loop.completed_runs / loop.repeat_count) * 100) : 0
           const activeLabel = loop.current_match_id
-            ? `第 ${loop.current_iteration} / ${loop.repeat_count} 场 · ${loop.current_match_status ?? 'running'}`
-            : `已完成 ${loop.completed_runs} / ${loop.repeat_count} 场`
+            ? `Run ${loop.current_iteration} / ${loop.repeat_count} · ${loop.current_match_status ?? 'running'}`
+            : `Completed ${loop.completed_runs} / ${loop.repeat_count}`
 
           return (
             <article key={loop.loop_id} className="rounded-xl border border-slate-700 bg-slate-800/60 p-5 shadow-lg shadow-black/10">
@@ -87,7 +87,7 @@ const LoopMatchesPage: React.FC = () => {
                     <h3 className="text-lg font-semibold text-slate-100">{loop.name}</h3>
                     <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClassName(loop.status)}`}>{loop.status}</span>
                   </div>
-                  <div className="text-xs text-slate-400">循环 ID：{loop.loop_id}</div>
+                  <div className="text-xs text-slate-400">Loop ID: {loop.loop_id}</div>
                   <div className="text-sm text-slate-300">{activeLabel}</div>
                 </div>
                 {loop.status === 'running' && (
@@ -96,14 +96,14 @@ const LoopMatchesPage: React.FC = () => {
                     onClick={() => stopLoop(loop.loop_id)}
                     disabled={stoppingLoopId === loop.loop_id}
                   >
-                    {stoppingLoopId === loop.loop_id ? '停止中...' : '停止后续比赛'}
+                    {stoppingLoopId === loop.loop_id ? 'Stopping...' : 'Stop future runs'}
                   </button>
                 )}
               </div>
 
               <div className="mt-4 space-y-2">
                 <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span>进度</span>
+                  <span>Progress</span>
                   <span>{loop.completed_runs} / {loop.repeat_count}</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-slate-700">
@@ -113,19 +113,19 @@ const LoopMatchesPage: React.FC = () => {
 
               <dl className="mt-4 grid grid-cols-1 gap-3 text-sm text-slate-300 md:grid-cols-2">
                 <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3">
-                  <dt className="text-xs uppercase tracking-wide text-slate-500">当前比赛</dt>
-                  <dd className="mt-1 text-slate-100">{loop.current_match_id ?? '无'}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">Current match</dt>
+                  <dd className="mt-1 text-slate-100">{loop.current_match_id ?? 'None'}</dd>
                 </div>
                 <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3">
-                  <dt className="text-xs uppercase tracking-wide text-slate-500">上一场比赛</dt>
-                  <dd className="mt-1 text-slate-100">{loop.last_match_id ?? '无'}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">Last match</dt>
+                  <dd className="mt-1 text-slate-100">{loop.last_match_id ?? 'None'}</dd>
                 </div>
                 <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3">
-                  <dt className="text-xs uppercase tracking-wide text-slate-500">创建时间</dt>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">Created</dt>
                   <dd className="mt-1 text-slate-100">{loop.created_at ? new Date(loop.created_at).toLocaleString() : '-'}</dd>
                 </div>
                 <div className="rounded-md border border-slate-700 bg-slate-900/40 p-3">
-                  <dt className="text-xs uppercase tracking-wide text-slate-500">最近更新</dt>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">Updated</dt>
                   <dd className="mt-1 text-slate-100">{loop.updated_at ? new Date(loop.updated_at).toLocaleString() : '-'}</dd>
                 </div>
               </dl>
@@ -136,7 +136,7 @@ const LoopMatchesPage: React.FC = () => {
                     className="rounded-md bg-cyan-600 px-3 py-2 text-xs font-medium text-white hover:bg-cyan-500"
                     onClick={() => navigate(`/arena/${loop.current_match_id}`)}
                   >
-                    进入当前观战
+                    Open current arena
                   </button>
                 )}
                 {loop.last_match_id && (
@@ -144,7 +144,7 @@ const LoopMatchesPage: React.FC = () => {
                     className="rounded-md bg-slate-700 px-3 py-2 text-xs font-medium text-white hover:bg-slate-600"
                     onClick={() => navigate(`/replay/${loop.last_match_id}`)}
                   >
-                    查看上一场回放
+                    View last replay
                   </button>
                 )}
               </div>
@@ -155,13 +155,13 @@ const LoopMatchesPage: React.FC = () => {
 
       {!loading && loops.length === 0 && (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-800/30 px-6 py-12 text-center text-slate-400">
-          暂无循环比赛。前往“配置大厅”将循环次数设置为大于 1 后开始比赛。
+          No loop matches yet. Go to Config and set repeat count &gt; 1 to start.
         </div>
       )}
 
       {loading && (
         <div className="rounded-xl border border-slate-700 bg-slate-800/30 px-6 py-12 text-center text-slate-400">
-          正在加载循环比赛信息...
+          Loading loop matches...
         </div>
       )}
     </div>
