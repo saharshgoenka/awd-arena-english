@@ -54,6 +54,7 @@ from player_code_export import (
 )
 from backends import AgentBackendAdapter, backend_registry
 import database
+import run_writer  # R4: per-match JSONL summary writer (RESEARCH_PLAN.md §6.2)
 
 # Logging
 logging.basicConfig(
@@ -64,6 +65,11 @@ logging.basicConfig(
 logger = logging.getLogger("referee")
 
 CONTAINER_TIMEZONE = "Asia/Shanghai"
+
+# Reserved attacker id used by the reference exploit sidecar in defense_only matches.
+# Bypasses the own_flag rejection in FlagManager.validate_submission so the oracle can
+# submit flags against the single agent player without colliding with any real player_id.
+ORACLE_ATTACKER_ID = 999_000
 
 # Optional orchestrator (not needed if containers are managed externally)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -164,6 +170,10 @@ class PlayerConfig(BaseModel):
     gatewayPort: Optional[int] = None
     backend_type: str = "openclaw"
     backend_config: PlayerBackendConfig = Field(default_factory=PlayerBackendConfig)
+    # When False, the referee provisions a target container with flags but no agent
+    # container — used as a passive victim in attack_only matches so the lone LLM
+    # attacker has a foreign target to capture flags from. See RESEARCH_PLAN.md §4.2.
+    is_agent: bool = True
 
 class ScoringConfig(BaseModel):
     attackSuccess: int = 100
@@ -196,6 +206,25 @@ class MatchConfig(BaseModel):
     target_image: str = "openclaw/ctf-target:v1"
     agent_image: str = "openclaw/awd-openclaw-agent:latest"
     loop: LoopMatchConfig = LoopMatchConfig()
+    # RESEARCH_PLAN.md §6.2 R3: per-match orchestration mode.
+    #   "hvh"           — head-to-head (existing behavior; defense window then attack window).
+    #   "defense_only"  — single agent patches; referee runs the reference exploit afterwards.
+    #   "attack_only"   — single agent attacks an unpatched victim target; no defense window.
+    mode: str = "hvh"
+    scenario_id: str = "S1"
+    # Set by the bench runner to group matches that share a grid invocation.
+    bench_run_id: Optional[str] = None
+    # Image of the reference exploit sidecar (defense_only only). Built from
+    # target-image/scenarios/<scenario_id>/Dockerfile.oracle.
+    oracle_image: Optional[str] = None
+    # R2: per-agent-player token-budget enforcement. Exceeding either ceiling
+    # marks the match DNF (RESEARCH_PLAN.md §4.2).
+    token_budget_input: int = 100_000
+    token_budget_output: int = 25_000
+    # Where run_writer drops the per-match JSONL summary. None = use the
+    # REFEREE_RUNS_DIR env var or its default (referee-engine/runs/v1).
+    runs_dir: Optional[str] = None
+    decoding_temp: float = 0.2
 
 class FlagSubmission(BaseModel):
     """Flag submission payload."""
@@ -341,6 +370,17 @@ class MatchState:
         self.player_code_export: Optional[Dict[str, Any]] = None
         self.resources_destroyed = False
         self._destroy_task: Optional[asyncio.Task] = None
+        # R2 (token budget) + R3 (oracle) + R4 (JSONL) state — all populated by
+        # the orchestrator and consumed at end_match-time by run_writer.
+        self.token_usage: Dict[str, int] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "messages": 0,
+            "budget_exceeded": False,
+        }
+        self.dnf: bool = False
+        self.dnf_reason: Optional[str] = None
+        self.oracle_summary: Optional[Dict[str, Any]] = None
 
     def add_event(self, event_type: str, data: dict):
         """Record a match event and persist asynchronously."""
@@ -1174,7 +1214,10 @@ class RefereeEngine:
         return [
             player_id
             for player_id, player in match.players.items()
-            if player.ready_status != "AGENT_READY"
+            # Victim-only players (attack_only mode) have no agent_session;
+            # they never become "AGENT_READY" and must not block startup.
+            if player_id in match.agent_sessions
+            and player.ready_status != "AGENT_READY"
         ]
 
     async def _apply_agent_initialization_results(
@@ -1756,12 +1799,19 @@ class RefereeEngine:
 
         async def _create_player_containers(player_cfg: PlayerConfig):
             pid = player_cfg.id
-            try:
-                player_backend = backend_registry.get(player_cfg.backend_type)
-            except Exception as exc:
-                raise RuntimeError(f"Player {pid} backend setup failed: {exc}") from exc
-            match.player_backends[pid] = player_backend
-            
+            # Non-agent players (is_agent=False) are passive victim slots used by
+            # attack_only matches — they get a target container with flags but no
+            # claw/agent container, no SSH key, no backend. RESEARCH_PLAN.md §4.2.
+            is_agent = getattr(player_cfg, "is_agent", True)
+            if is_agent:
+                try:
+                    player_backend = backend_registry.get(player_cfg.backend_type)
+                except Exception as exc:
+                    raise RuntimeError(f"Player {pid} backend setup failed: {exc}") from exc
+                match.player_backends[pid] = player_backend
+            else:
+                player_backend = None
+
             player_network_name = f"awd_{match.match_id}_player_{pid}"
             try:
                 match_hash = int(hashlib.md5(match.match_id.encode()).hexdigest()[:4], 16) % 124
@@ -1793,12 +1843,15 @@ class RefereeEngine:
             target_name = f"target_{match.match_id}_{pid}"
             claw_name = f"claw_{match.match_id}_{pid}"
 
-            try:
-                match.player_ssh_key_materials[pid] = await self._generate_player_ssh_keypair(match.match_id, pid)
-            except Exception as exc:
-                raise RuntimeError(f"Failed to generate SSH keypair for player {pid}: {exc}") from exc
-            ssh_key_material = match.player_ssh_key_materials[pid]
-            
+            if is_agent:
+                try:
+                    match.player_ssh_key_materials[pid] = await self._generate_player_ssh_keypair(match.match_id, pid)
+                except Exception as exc:
+                    raise RuntimeError(f"Failed to generate SSH keypair for player {pid}: {exc}") from exc
+                ssh_authorized_key = match.player_ssh_key_materials[pid].public_key.rstrip("\n")
+            else:
+                ssh_authorized_key = ""
+
             flags = {
                 f"FLAG_{i}": f"FLAG{{{secrets.token_hex(16)}}}"
                 for i in range(1, 5)
@@ -1808,11 +1861,10 @@ class RefereeEngine:
             flags["TZ"] = CONTAINER_TIMEZONE
             flags["MAINTENANCE_USERNAME"] = "defender"
             flags["MAINTENANCE_PASSWORD"] = maintenance_password
-            flags["MAINTENANCE_AUTHORIZED_KEY"] = ssh_key_material.public_key.rstrip("\n")
-            
+            flags["MAINTENANCE_AUTHORIZED_KEY"] = ssh_authorized_key
+
             target_image = match.config.target_image or "openclaw/ctf-target:v1"
-            agent_spec = player_backend.build_agent_container_spec(match, player_cfg)
-            
+
             await loop.run_in_executor(None, lambda: client.containers.run(
                 target_image,
                 name=target_name,
@@ -1831,28 +1883,31 @@ class RefereeEngine:
                 },
             ))
 
-            await loop.run_in_executor(None, lambda: client.containers.run(
-                agent_spec.image,
-                name=claw_name,
-                hostname=f"claw_{pid}",
-                network=player_network_name,
-                environment=agent_spec.environment,
-                detach=True,
-                remove=False,
-                mem_limit="2g",
-                nano_cpus=2_000_000_000,  # 2 CPU cores
-                restart_policy=CONTAINER_RESTART_POLICY,
-                entrypoint=agent_spec.entrypoint,
-                command=agent_spec.command,
-                volumes=agent_spec.volumes or None,
-                labels={
-                    "awd.match_id": match.match_id,
-                    "awd.player_id": str(pid),
-                    "awd.role": "agent",
-                },
-            ))
-            
-            logger.info(f"[Player {pid}] Containers launched: target={target_name}, agent={claw_name}")
+            if is_agent:
+                agent_spec = player_backend.build_agent_container_spec(match, player_cfg)
+                await loop.run_in_executor(None, lambda: client.containers.run(
+                    agent_spec.image,
+                    name=claw_name,
+                    hostname=f"claw_{pid}",
+                    network=player_network_name,
+                    environment=agent_spec.environment,
+                    detach=True,
+                    remove=False,
+                    mem_limit="2g",
+                    nano_cpus=2_000_000_000,  # 2 CPU cores
+                    restart_policy=CONTAINER_RESTART_POLICY,
+                    entrypoint=agent_spec.entrypoint,
+                    command=agent_spec.command,
+                    volumes=agent_spec.volumes or None,
+                    labels={
+                        "awd.match_id": match.match_id,
+                        "awd.player_id": str(pid),
+                        "awd.role": "agent",
+                    },
+                ))
+                logger.info(f"[Player {pid}] Containers launched: target={target_name}, agent={claw_name}")
+            else:
+                logger.info(f"[Player {pid}] Victim-only player: target={target_name} (no agent container)")
         
         await asyncio.gather(
             *[_create_player_containers(player_cfg) for player_cfg in match.config.players]
@@ -1883,22 +1938,24 @@ class RefereeEngine:
 
         for player_cfg in match.config.players:
             pid = player_cfg.id
+            is_agent = getattr(player_cfg, "is_agent", True)
             player_network_name = f"awd_{match.match_id}_player_{pid}"
             target_name = f"target_{match.match_id}_{pid}"
             claw_name = f"claw_{match.match_id}_{pid}"
-            player_backend = match.player_backends[pid]
-            ssh_key_material = match.player_ssh_key_materials[pid]
-            ssh_spec = player_backend.resolve_target_ssh_spec(match.config, player_cfg)
-            ssh_key_material.private_key_path = ssh_spec.private_key_path
-            ssh_key_material.helper_path = ssh_spec.helper_path
-            ssh_key_material.owner_user = ssh_spec.owner_user
-            ssh_key_material.owner_group = ssh_spec.owner_group
+            if is_agent:
+                player_backend = match.player_backends[pid]
+                ssh_key_material = match.player_ssh_key_materials[pid]
+                ssh_spec = player_backend.resolve_target_ssh_spec(match.config, player_cfg)
+                ssh_key_material.private_key_path = ssh_spec.private_key_path
+                ssh_key_material.helper_path = ssh_spec.helper_path
+                ssh_key_material.owner_user = ssh_spec.owner_user
+                ssh_key_material.owner_group = ssh_spec.owner_group
 
             target_ip = await _get_container_ip(target_name, player_network_name)
-            
+
             match.players[pid] = PlayerState(
                 player_id=pid,
-                container_name=claw_name,
+                container_name=claw_name if is_agent else "",
                 target_container=target_name,
                 target_ip=target_ip,
                 target_port=3000,
@@ -1908,18 +1965,24 @@ class RefereeEngine:
                 maintenance_helper_command="target-ssh",
                 maintenance_password=maintenance_passwords.get(pid),
             )
-            
-            match.agent_sessions[pid] = AgentSession(
-                player_id=pid,
-                container_name=claw_name,
-                target_container=target_name,
-                target_ip=target_ip,
-            )
-            
-            logger.info(
-                f"[Player {pid}] Containers created on isolated network {player_network_name}: "
-                f"target={target_name} (IP={target_ip}), agent={claw_name}"
-            )
+
+            if is_agent:
+                match.agent_sessions[pid] = AgentSession(
+                    player_id=pid,
+                    container_name=claw_name,
+                    target_container=target_name,
+                    target_ip=target_ip,
+                )
+
+                logger.info(
+                    f"[Player {pid}] Containers created on isolated network {player_network_name}: "
+                    f"target={target_name} (IP={target_ip}), agent={claw_name}"
+                )
+            else:
+                logger.info(
+                    f"[Player {pid}] Victim-only state created on isolated network {player_network_name}: "
+                    f"target={target_name} (IP={target_ip}); no agent session"
+                )
         
         async def _wait_target_ready(pid: int, player: Any) -> None:
             for attempt in range(TARGET_HTTP_READY_RETRIES):
@@ -1962,7 +2025,12 @@ class RefereeEngine:
             )
 
         await asyncio.gather(
-            *[_prepare_agent_target_ssh(pid, player) for pid, player in match.players.items()]
+            *[
+                _prepare_agent_target_ssh(pid, player)
+                for pid, player in match.players.items()
+                # Skip victim-only players — they have no agent container to wire SSH into.
+                if pid in match.agent_sessions
+            ]
         )
         
         match.add_event("CONTAINERS_CREATED", {
@@ -2363,34 +2431,58 @@ class RefereeEngine:
             })
     
     async def _match_timer(self, match: MatchState):
-        """Match timer — defense (isolated) → attack (open network) → end."""
+        """Match timer — defense (isolated) → attack (open network) → end.
+
+        Mode branches (RESEARCH_PLAN.md §6.2 R3):
+          hvh          — existing behavior; both phases, multi-player attack.
+          defense_only — defense phase as usual; replace the agent attack window
+                          with the reference-exploit sidecar (oracle).
+          attack_only  — skip defense entirely; immediately open the arena and
+                          dispatch the attack prompt against the victim target.
+        """
+        mode = getattr(match.config, "mode", "hvh")
         phases = match.config.match.phases
         defense_duration = phases.defense
         attack_duration = phases.attack
-        
-        heartbeat_task = asyncio.create_task(
-            self._heartbeat_loop(match, defense_duration + attack_duration)
-        )
-        defense_keepalive_task = asyncio.create_task(self._defense_keepalive_loop(match))
+
+        if mode == "attack_only":
+            total_seconds = attack_duration
+        elif mode == "defense_only":
+            total_seconds = defense_duration + attack_duration
+        else:
+            total_seconds = defense_duration + attack_duration
+
+        heartbeat_task = asyncio.create_task(self._heartbeat_loop(match, total_seconds))
         attack_keepalive_task: Optional[asyncio.Task] = None
-        
-        logger.info(f"[{match.match_id}] Defense phase: {defense_duration}s (networks isolated)")
-        await asyncio.sleep(defense_duration)
-        
-        if match.status != "defense":
+        defense_keepalive_task: Optional[asyncio.Task] = None
+
+        if mode == "attack_only":
+            logger.info(
+                f"[{match.match_id}] attack_only: skipping defense phase, "
+                f"opening arena immediately"
+            )
+            # Jump straight to the attack-phase setup. The arena network gets opened below;
+            # the agent receives the attack prompt with the victim target as the enemy.
+        else:
+            defense_keepalive_task = asyncio.create_task(self._defense_keepalive_loop(match))
+            logger.info(f"[{match.match_id}] Defense phase: {defense_duration}s (networks isolated)")
+            await asyncio.sleep(defense_duration)
+
+            if match.status != "defense":
+                defense_keepalive_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await defense_keepalive_task
+                heartbeat_task.cancel()
+                return
             defense_keepalive_task.cancel()
             with suppress(asyncio.CancelledError):
                 await defense_keepalive_task
-            heartbeat_task.cancel()
-            return
+
         # Transition to attack phase
         match.status = "attack"
         match.attack_started_at = datetime.now()
-        defense_keepalive_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await defense_keepalive_task
         await database.update_match_status(match.match_id, match.status)
-        match.add_event("PHASE_CHANGE", {"phase": "attack", "action": "opening_network"})
+        match.add_event("PHASE_CHANGE", {"phase": "attack", "action": "opening_network", "mode": mode})
         
         await self._open_arena_network(match)
         
@@ -2426,7 +2518,28 @@ class RefereeEngine:
             "remaining_seconds": attack_duration,
             "arena_ips": arena_ips,
         })
-        
+
+        # === defense_only branch: replace the agent attack window with the reference
+        # exploit sidecar (RESEARCH_PLAN.md §6.2 R3). The lone agent player has just
+        # finished patching its target; the oracle now tries to capture every flag.
+        if mode == "defense_only":
+            try:
+                match.oracle_summary = await self._run_oracle_exploit(
+                    match,
+                    arena_ips=arena_ips,
+                    arena_network_name=arena_network_name,
+                    attack_duration=attack_duration,
+                )
+            except Exception as exc:
+                logger.exception(f"[{match.match_id}] oracle exploit failed: {exc}")
+                match.oracle_summary = {"error": str(exc)}
+                match.add_event("ORACLE_EXPLOIT_ERROR", {"error": str(exc)})
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
+            await self.end_match(match.match_id)
+            return
+
         referee_url = "http://host.docker.internal:8000"
         scoring = match.config.scoring.model_dump()
 
@@ -2695,16 +2808,139 @@ class RefereeEngine:
             _connect_container(cname)
             for player in match.players.values()
             for cname in [player.container_name, player.target_container]
+            if cname  # Victim-only players have container_name="" (no claw container).
         ]
         await asyncio.gather(*connect_tasks)
-        
+
         await asyncio.sleep(2)
-        
+
         match.add_event("NETWORK_OPENED", {
             "arena_network": arena_network_name,
-            "containers_connected": len(match.players) * 2,
+            "containers_connected": sum(
+                (1 if p.container_name else 0) + 1 for p in match.players.values()
+            ),
         })
-    
+
+    async def _run_oracle_exploit(
+        self,
+        match: MatchState,
+        *,
+        arena_ips: Dict[int, str],
+        arena_network_name: str,
+        attack_duration: int,
+    ) -> Dict[str, Any]:
+        """
+        Spawn the reference-exploit sidecar against each defender target.
+
+        Used only in MatchConfig.mode == "defense_only". The sidecar runs on the
+        arena network and submits captured flags through the referee HTTP API as
+        ORACLE_ATTACKER_ID (which bypasses the own_flag rejection in
+        FlagManager.validate_submission).
+
+        Returns a dict capturing per-player exit codes and parsed JSON output
+        from the sidecar, used by run_writer to populate match.oracle_summary.
+        """
+        oracle_image = getattr(match.config, "oracle_image", None)
+        if not oracle_image:
+            raise RuntimeError(
+                "MatchConfig.oracle_image is required for mode=defense_only. "
+                "Build the sidecar image first (e.g. openclaw/oracle-s1:v1)."
+            )
+
+        client = docker.from_env()
+        loop = asyncio.get_running_loop()
+        referee_url = "http://host.docker.internal:8000"
+
+        # Defenders = real agent players (skip any non-agent slots, though
+        # defense_only is single-player by construction).
+        defender_ids = [pid for pid in match.players if pid in match.agent_sessions]
+
+        results: Dict[int, Dict[str, Any]] = {}
+
+        async def _run_one(pid: int) -> None:
+            player = match.players[pid]
+            target_ip = arena_ips.get(pid, player.target_ip)
+            container_name = f"oracle_{match.match_id}_{pid}"
+            args = [
+                "--target-host", target_ip,
+                "--target-port", str(player.target_port),
+                "--referee-url", referee_url,
+                "--match-id", match.match_id,
+                "--attacker-id", str(ORACLE_ATTACKER_ID),
+                "--victim-id", str(pid),
+                "--budget-seconds", str(attack_duration),
+            ]
+            match.add_event("ORACLE_EXPLOIT_STARTED", {
+                "player_id": pid,
+                "image": oracle_image,
+                "target_ip": target_ip,
+                "container": container_name,
+            })
+
+            def _run():
+                container = client.containers.run(
+                    oracle_image,
+                    command=args,
+                    name=container_name,
+                    network=arena_network_name,
+                    extra_hosts={"host.docker.internal": "host-gateway"},
+                    detach=True,
+                    remove=False,
+                    mem_limit="512m",
+                    nano_cpus=500_000_000,
+                    labels={
+                        "awd.match_id": match.match_id,
+                        "awd.player_id": str(pid),
+                        "awd.role": "oracle-attacker",
+                    },
+                )
+                # Block up to the attack window for the sidecar to finish.
+                try:
+                    exit_status = container.wait(timeout=attack_duration + 30)
+                    status_code = exit_status.get("StatusCode", 1) if isinstance(exit_status, dict) else 1
+                except Exception as wait_exc:
+                    logger.warning(f"[{match.match_id}] oracle wait error: {wait_exc}")
+                    status_code = 1
+                try:
+                    stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
+                    stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
+                finally:
+                    try:
+                        container.remove(force=True)
+                    except Exception:
+                        pass
+                return status_code, stdout, stderr
+
+            try:
+                status_code, stdout, stderr = await loop.run_in_executor(None, _run)
+            except Exception as exc:
+                logger.exception(f"[{match.match_id}] oracle sidecar crashed for player {pid}: {exc}")
+                results[pid] = {"exit_code": -1, "error": str(exc)}
+                return
+
+            parsed: Optional[Dict[str, Any]] = None
+            stripped = stdout.strip()
+            if stripped:
+                try:
+                    parsed = json.loads(stripped[stripped.rfind("{"):]) if "{" in stripped else None
+                except Exception:
+                    parsed = None
+            results[pid] = {
+                "exit_code": status_code,
+                "stdout_tail": stdout[-2000:],
+                "stderr_tail": stderr[-2000:],
+                "summary": parsed,
+            }
+            match.add_event("ORACLE_EXPLOIT_FINISHED", {
+                "player_id": pid,
+                "exit_code": status_code,
+                "summary": parsed,
+            })
+
+        # In defense_only we expect a single defender, but run all in parallel anyway.
+        await asyncio.gather(*[_run_one(pid) for pid in defender_ids])
+        return {"defenders": defender_ids, "results": results}
+
     async def submit_flag(self, match_id: str, submission: FlagSubmission) -> Dict:
         """Handle flag submission."""
         match = self.matches.get(match_id)
@@ -2888,6 +3124,39 @@ class RefereeEngine:
         })
         
         logger.info(f"[{match_id}] Match finished. Final leaderboard: {json.dumps(final_leaderboard, default=str)}")
+
+        # R2: sum per-session token usage into MatchState.token_usage and mark the
+        # match DNF if either ceiling was exceeded (RESEARCH_PLAN.md §4.2, §4.4).
+        total_in = sum(getattr(s, "tokens_input", 0) for s in match.agent_sessions.values())
+        total_out = sum(getattr(s, "tokens_output", 0) for s in match.agent_sessions.values())
+        total_msgs = sum(getattr(s, "tokens_messages", 0) for s in match.agent_sessions.values())
+        budget_in = getattr(match.config, "token_budget_input", 0) or 0
+        budget_out = getattr(match.config, "token_budget_output", 0) or 0
+        budget_exceeded = bool(
+            (budget_in and total_in > budget_in)
+            or (budget_out and total_out > budget_out)
+        )
+        match.token_usage = {
+            "input_tokens": total_in,
+            "output_tokens": total_out,
+            "messages": total_msgs,
+            "budget_exceeded": budget_exceeded,
+        }
+        if budget_exceeded and not match.dnf:
+            match.dnf = True
+            match.dnf_reason = (
+                f"token_budget_exceeded(in={total_in}/{budget_in}, out={total_out}/{budget_out})"
+            )
+            match.add_event("DNF", {"reason": match.dnf_reason})
+
+        # R4: per-match JSONL summary. Written before destroy_match so the bench
+        # runner can poll for it as the completion signal.
+        try:
+            jsonl_path = run_writer.write_match_jsonl(match)
+            if jsonl_path:
+                match.add_event("MATCH_JSONL_WRITTEN", {"path": jsonl_path})
+        except Exception as jsonl_err:
+            logger.exception(f"[{match_id}] failed to write match JSONL: {jsonl_err}")
 
         if not match.resources_destroyed:
             if match._destroy_task is None or match._destroy_task.done():

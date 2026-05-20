@@ -18,6 +18,11 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
+# Mirrors main.ORACLE_ATTACKER_ID; defined here to avoid a circular import.
+# Submissions from this attacker_id bypass the own_flag rejection so the
+# reference-exploit sidecar can submit against the lone defender in defense_only mode.
+ORACLE_ATTACKER_ID = 999_000
+
 FLAG_SLOT_SEQUENCE: List[Tuple[str, int]] = [
     ("admin_notes", 1),
     ("database_flag", 2),
@@ -318,8 +323,10 @@ class FlagManager:
             )
 
         victim_id = self.all_flags[flag]
-        
-        if victim_id == attacker_id:
+
+        # ORACLE_ATTACKER_ID is the reference-exploit sidecar; it has no flags of
+        # its own, so the own_flag check is irrelevant and must be skipped.
+        if victim_id == attacker_id and attacker_id != ORACLE_ATTACKER_ID:
             return _record_submission(
                 _submission_record(victim_id=victim_id, success=False, reason="own_flag"),
                 {"success": False, "reason": "own_flag", "points": 0},

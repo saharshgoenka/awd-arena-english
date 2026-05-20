@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node / frontend build
+frontend/dist/
+frontend/node_modules/
+
+# Runtime data
+referee-engine/openclaw.db
+referee-engine/runs/
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/

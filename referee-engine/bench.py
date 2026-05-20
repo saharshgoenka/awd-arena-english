@@ -1,0 +1,324 @@
+"""
+Batch runner — RESEARCH_PLAN.md §6.2 R5.
+
+Reads a bench config (bench/v1.yaml), enumerates the (phase × model × scenario × mode × k)
+grid, and dispatches each cell as a MatchConfig POST to the referee HTTP API. Polls until
+the referee writes a per-match JSONL file (handled by run_writer.write_match_jsonl in
+end_match), then moves on.
+
+Usage:
+    OPENROUTER_API_KEY=... python -m bench --config bench/v1.yaml
+
+Notes:
+  - The referee must already be running (docker compose up referee-engine).
+  - The cumulative-budget cap is enforced by skipping remaining cells once the
+    measured spend (from the JSONL token_usage + a per-model $/Mtok price table)
+    crosses the cap. For free-tier OpenRouter models the price is $0; if a free
+    model rate-limits and the runner sees DNFs piling up, it slows the dispatch.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+try:
+    import yaml  # PyYAML
+except ImportError:
+    print("PyYAML is required: pip install pyyaml", file=sys.stderr)
+    raise
+
+logging.basicConfig(
+    level=os.environ.get("BENCH_LOG_LEVEL", "INFO"),
+    format="[bench] %(asctime)s %(levelname)s %(message)s",
+)
+log = logging.getLogger("bench")
+
+
+# Per-Mtoken pricing for the paid endpoints corresponding to each free-tier slug.
+# Used to compute the cost-per-match estimate when a free slug rate-limits and
+# the bench runner falls back to the paid endpoint. Numbers are intentionally
+# conservative — adjust after Phase A measures actual usage.
+PAID_FALLBACK_PRICES = {
+    "deepseek/deepseek-chat:free": {"in_per_mtok": 0.27, "out_per_mtok": 1.10,
+                                      "paid_slug": "deepseek/deepseek-chat"},
+    "qwen/qwen-2.5-coder-32b-instruct:free": {"in_per_mtok": 0.18, "out_per_mtok": 0.18,
+                                                "paid_slug": "qwen/qwen-2.5-coder-32b-instruct"},
+    "meta-llama/llama-3.3-70b-instruct:free": {"in_per_mtok": 0.25, "out_per_mtok": 0.65,
+                                                 "paid_slug": "meta-llama/llama-3.3-70b-instruct"},
+}
+
+
+@dataclass
+class BenchCell:
+    phase_name: str
+    model_id: str
+    openrouter_slug: str
+    model_label: str
+    scenario_id: str
+    mode: str
+    k_index: int
+    k_total: int
+
+    @property
+    def cell_label(self) -> str:
+        return f"{self.phase_name}/{self.model_id}/{self.scenario_id}/{self.mode}/k{self.k_index}"
+
+
+@dataclass
+class BenchState:
+    cells_planned: int = 0
+    cells_dispatched: int = 0
+    cells_completed: int = 0
+    cells_dnf: int = 0
+    estimated_spend_usd: float = 0.0
+    per_match_records: List[Dict[str, Any]] = field(default_factory=list)
+
+
+def load_config(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def enumerate_cells(cfg: Dict[str, Any]) -> List[BenchCell]:
+    models_by_id = {m["id"]: m for m in cfg["models"]}
+    cells: List[BenchCell] = []
+    for phase in cfg.get("phases", []):
+        grid = phase.get("grid", {})
+        k_total = int(grid.get("k", 1))
+        for model_id in grid.get("models", []):
+            m = models_by_id[model_id]
+            for scenario_id in grid.get("scenarios", []):
+                for mode in grid.get("modes", []):
+                    for k_index in range(1, k_total + 1):
+                        cells.append(BenchCell(
+                            phase_name=phase["name"],
+                            model_id=model_id,
+                            openrouter_slug=m["openrouter_slug"],
+                            model_label=m["label"],
+                            scenario_id=scenario_id,
+                            mode=mode,
+                            k_index=k_index,
+                            k_total=k_total,
+                        ))
+    return cells
+
+
+def build_match_config(
+    cell: BenchCell,
+    cfg: Dict[str, Any],
+    api_key: str,
+) -> Dict[str, Any]:
+    """Compose the JSON body posted to /api/matches/start."""
+    defaults = cfg.get("defaults", {})
+    scenario = cfg["scenarios"][cell.scenario_id]
+    bench_run_id = cfg.get("bench_run_id")
+
+    # Player roster depends on mode (see RESEARCH_PLAN.md §4.2 + referee changes for R3):
+    #   - hvh:           2+ agent players, one defender slot per player.
+    #   - defense_only:  1 agent player (defends own target); referee runs the
+    #                    oracle exploit during the attack window.
+    #   - attack_only:   1 agent player (attacker) + 1 non-agent "victim" player
+    #                    that owns a target but never patches; the agent attacks it.
+    if cell.mode == "defense_only":
+        players = [{
+            "id": 1,
+            "name": cell.model_label,
+            "model": cell.openrouter_slug,
+            "is_agent": True,
+        }]
+    elif cell.mode == "attack_only":
+        players = [
+            {
+                "id": 1,
+                "name": cell.model_label,
+                "model": cell.openrouter_slug,
+                "is_agent": True,
+            },
+            {
+                "id": 2,
+                "name": "unpatched-victim",
+                "model": None,
+                "is_agent": False,
+            },
+        ]
+    else:
+        raise ValueError(f"Bench runner does not yet build configs for mode={cell.mode}")
+
+    body = {
+        "match": defaults.get("match", {}),
+        "llm": {
+            **defaults.get("llm", {}),
+            "apiKey": api_key,
+            "model": cell.openrouter_slug,
+        },
+        "players": players,
+        "scoring": defaults.get("scoring", {}),
+        "flags": defaults.get("flags", {}),
+        "target_image": scenario["target_image"],
+        "oracle_image": scenario.get("oracle_image"),
+        "mode": cell.mode,
+        "scenario_id": cell.scenario_id,
+        "bench_run_id": bench_run_id,
+        "token_budget_input": defaults.get("token_budget_input", 100_000),
+        "token_budget_output": defaults.get("token_budget_output", 25_000),
+        "runs_dir": cfg.get("runs_dir", "referee-engine/runs/v1"),
+    }
+    return body
+
+
+def post_match(referee_url: str, body: Dict[str, Any], api_key_header: Optional[str]) -> str:
+    url = referee_url.rstrip("/") + "/api/matches/start"
+    headers = {"Content-Type": "application/json"}
+    if api_key_header:
+        headers["X-API-Key"] = api_key_header
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    return payload["match_id"]
+
+
+def poll_match_jsonl(matches_dir: Path, match_id: str, total_timeout_s: int) -> Optional[Dict[str, Any]]:
+    """Block until the referee writes runs/v1/matches/<match_id>.jsonl, or timeout."""
+    path = matches_dir / f"{match_id}.jsonl"
+    deadline = time.time() + total_timeout_s
+    while time.time() < deadline:
+        if path.exists() and path.stat().st_size > 0:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    line = f.readline()
+                return json.loads(line)
+            except (OSError, json.JSONDecodeError) as e:
+                log.warning(f"[{match_id}] partial JSONL read ({e}); retrying")
+        time.sleep(5)
+    return None
+
+
+def estimate_match_cost(record: Dict[str, Any], openrouter_slug: str) -> float:
+    """Convert token_usage into $ using the paid-fallback price table."""
+    usage = record.get("token_usage") or {}
+    price = PAID_FALLBACK_PRICES.get(openrouter_slug)
+    if not price:
+        return 0.0
+    in_tok = usage.get("input_tokens", 0) or 0
+    out_tok = usage.get("output_tokens", 0) or 0
+    return (in_tok / 1_000_000) * price["in_per_mtok"] + (out_tok / 1_000_000) * price["out_per_mtok"]
+
+
+def run(args: argparse.Namespace) -> int:
+    cfg = load_config(args.config)
+    cells = enumerate_cells(cfg)
+    if not cells:
+        log.error("No cells to run. Check bench config phases[].grid")
+        return 2
+
+    runs_dir = Path(cfg.get("runs_dir", "referee-engine/runs/v1"))
+    matches_dir = runs_dir / "matches"
+    matches_dir.mkdir(parents=True, exist_ok=True)
+
+    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("openrouter")
+    if not api_key:
+        log.error("OPENROUTER_API_KEY (or 'openrouter') env var is not set")
+        return 2
+    referee_api_key = os.environ.get("REFEREE_API_KEY")
+
+    state = BenchState(cells_planned=len(cells))
+    budget_cap = float(cfg.get("budget_cap_usd", 5.0))
+
+    log.info(f"Bench plan: {len(cells)} matches across phases "
+             f"{sorted({c.phase_name for c in cells})}. Budget cap ${budget_cap:.2f}.")
+
+    for cell in cells:
+        if state.estimated_spend_usd >= budget_cap:
+            log.error(f"Budget cap ${budget_cap:.2f} reached; skipping {cell.cell_label}")
+            break
+
+        body = build_match_config(cell, cfg, api_key)
+        log.info(f"=== Dispatching {cell.cell_label} ===")
+        if args.dry_run:
+            log.info(f"DRY RUN — would POST: {json.dumps({k: v for k, v in body.items() if k != 'llm'})}")
+            state.cells_dispatched += 1
+            continue
+
+        try:
+            match_id = post_match(args.referee_url, body, referee_api_key)
+        except urllib.error.HTTPError as e:
+            log.error(f"[{cell.cell_label}] referee rejected: {e.code} {e.read()[:300] if e.fp else ''}")
+            state.cells_dnf += 1
+            continue
+        except Exception as e:
+            log.exception(f"[{cell.cell_label}] dispatch failed: {e}")
+            state.cells_dnf += 1
+            continue
+
+        state.cells_dispatched += 1
+        log.info(f"[{cell.cell_label}] match_id={match_id}; polling for completion")
+
+        # Total per-match timeout: defense + attack + 5min startup/teardown slack.
+        match_total = (cfg.get("defaults", {}).get("match", {}).get("phases", {}).get("defense", 900)
+                       + cfg.get("defaults", {}).get("match", {}).get("phases", {}).get("attack", 1500)
+                       + 300)
+        record = poll_match_jsonl(matches_dir, match_id, total_timeout_s=match_total)
+        if record is None:
+            log.error(f"[{cell.cell_label}] JSONL never appeared within {match_total}s; marking DNF")
+            state.cells_dnf += 1
+            continue
+
+        if record.get("dnf"):
+            state.cells_dnf += 1
+            log.warning(f"[{cell.cell_label}] DNF: {record.get('dnf_reason')}")
+        else:
+            state.cells_completed += 1
+
+        cost = estimate_match_cost(record, cell.openrouter_slug)
+        state.estimated_spend_usd += cost
+        state.per_match_records.append({
+            "cell": cell.cell_label,
+            "match_id": match_id,
+            "dnf": record.get("dnf"),
+            "estimated_cost_usd": round(cost, 5),
+        })
+        log.info(f"[{cell.cell_label}] done; est cost ${cost:.5f}; cumulative ${state.estimated_spend_usd:.4f}")
+
+    summary_path = runs_dir / f"bench_summary_{cfg.get('bench_run_id', 'run')}.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "bench_run_id": cfg.get("bench_run_id"),
+            "cells_planned": state.cells_planned,
+            "cells_dispatched": state.cells_dispatched,
+            "cells_completed": state.cells_completed,
+            "cells_dnf": state.cells_dnf,
+            "estimated_spend_usd": round(state.estimated_spend_usd, 4),
+            "budget_cap_usd": budget_cap,
+            "matches": state.per_match_records,
+        }, f, indent=2)
+    log.info(f"Wrote bench summary to {summary_path}")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", required=True, help="Path to bench yaml (e.g. bench/v1.yaml)")
+    ap.add_argument("--referee-url", default=os.environ.get("REFEREE_URL", "http://localhost:8000"))
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Enumerate the grid and log what would be dispatched, but do not POST")
+    return run(ap.parse_args())
+
+
+if __name__ == "__main__":
+    sys.exit(main())

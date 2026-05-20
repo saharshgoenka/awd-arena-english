@@ -9,6 +9,17 @@ services:
     command: ["sh", "-c", "echo openclaw-awd-agent-image-ok"]
     restart: "no"
 
+  # S1 reference-exploit sidecar (RESEARCH_PLAN.md §6.1 E9 + §6.2 R3). Built once
+  # alongside the agent image; the referee spawns this image per defense_only
+  # match against the patched target. Image not run by compose (only built).
+  oracle-s1:
+    build:
+      context: ./target-image/scenarios/s1
+      dockerfile: Dockerfile.oracle
+    image: openclaw/oracle-s1:v1
+    entrypoint: ["true"]
+    restart: "no"
+
   referee-engine:
     build:
       context: ./referee-engine

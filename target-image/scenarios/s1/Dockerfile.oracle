@@ -1,0 +1,13 @@
+# Sidecar image for the S1 reference exploit.
+# Built as openclaw/oracle-s1:v1; consumed by referee_engine.main._run_oracle_exploit
+# when MatchConfig.mode == "defense_only".
+#
+#   docker build -f target-image/scenarios/s1/Dockerfile.oracle \
+#       -t openclaw/oracle-s1:v1 target-image/scenarios/s1
+FROM python:3.11-slim
+
+# Pure-stdlib script; no pip installs needed.
+COPY oracle_exploit.py /oracle_exploit.py
+RUN chmod +x /oracle_exploit.py
+
+ENTRYPOINT ["python", "/oracle_exploit.py"]

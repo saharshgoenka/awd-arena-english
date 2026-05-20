@@ -67,6 +67,13 @@ class AgentSession:
     last_completed_message_kind: Optional[str] = None
     buffered_messages: List[BufferedMessage] = field(default_factory=list)
     buffered_messages_frozen: bool = False
+    # R2 (RESEARCH_PLAN.md §4.2, §6.2): per-session token accounting. Populated
+    # in _send_message_locked from the OpenAI-style `usage` block on each agent
+    # response. The referee sums these across agent_sessions to enforce the
+    # per-match input/output ceilings and to record real token spend in the JSONL.
+    tokens_input: int = 0
+    tokens_output: int = 0
+    tokens_messages: int = 0
 
     @property
     def is_busy(self) -> bool:
@@ -1012,6 +1019,28 @@ for item in events[-10:]:
                             session.session_id = sid
                             self._mark_session_ready(session)
                             logger.info(f"[Player {session.player_id}] Session ID captured: {sid}")
+                        # R2: extract token usage. The OpenClaw gateway forwards the
+                        # provider's `usage` block when available (OpenAI-style keys).
+                        # Look in three places: top-level, meta, meta.agentMeta.
+                        usage = None
+                        if isinstance(resp, dict):
+                            for candidate in (resp.get("usage"),
+                                              (meta or {}).get("usage") if isinstance(meta, dict) else None,
+                                              (agent_meta or {}).get("usage") if isinstance(agent_meta, dict) else None):
+                                if isinstance(candidate, dict):
+                                    usage = candidate
+                                    break
+                        if usage:
+                            in_tok = (usage.get("prompt_tokens")
+                                      or usage.get("input_tokens") or 0)
+                            out_tok = (usage.get("completion_tokens")
+                                       or usage.get("output_tokens") or 0)
+                            try:
+                                session.tokens_input += int(in_tok)
+                                session.tokens_output += int(out_tok)
+                                session.tokens_messages += 1
+                            except (TypeError, ValueError):
+                                pass
                         session.last_completed_message_kind = message_kind
                         response_text = session.last_response
                     except json.JSONDecodeError:
