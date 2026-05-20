@@ -36,6 +36,9 @@ services:
       - TZ=Asia/Shanghai
       # Broad CORS for local dev when the browser hits the API directly
       - CORS_ORIGINS=*
+      # Forward the OpenRouter key (set via `openrouter=...` in .env at repo root)
+      # so /api/defaults can autofill it in the UI on first load. Empty if unset.
+      - OPENROUTER_API_KEY=${openrouter:-}
     ports:
       - "8000:8000"
     restart: unless-stopped

@@ -24,7 +24,12 @@ type Player = {
   gatewayPort: number
   backendType: 'openclaw' | 'hermes'
   backendConfig: PlayerBackendConfig
+  // Passive victim slot used by attack_only matches: target container with flags
+  // but no claw/agent container. See RESEARCH_PLAN.md §4.2 + referee R3.
+  isAgent: boolean
 }
+
+type MatchMode = 'hvh' | 'defense_only' | 'attack_only'
 
 type ConfigState = {
   matchName: string
@@ -41,6 +46,12 @@ type ConfigState = {
   flagsRefreshInterval?: number
   targetImage?: string
   agentImage?: string
+  // R3 / R4 fields
+  mode: MatchMode
+  scenarioId: string
+  oracleImage?: string
+  tokenBudgetInput: number
+  tokenBudgetOutput: number
 }
 
 const defaultPlayer = (idx: number, port: number): Player => ({
@@ -51,6 +62,7 @@ const defaultPlayer = (idx: number, port: number): Player => ({
   gatewayPort: port,
   backendType: 'openclaw',
   backendConfig: {},
+  isAgent: true,
 })
 
 const ConfigPage: React.FC = () => {
@@ -82,7 +94,40 @@ const ConfigPage: React.FC = () => {
     flagsRefreshInterval: 5,
     targetImage: 'openclaw/ctf-target:v1',
     agentImage: 'openclaw/awd-openclaw-agent:latest',
+    mode: 'hvh',
+    scenarioId: 'S1',
+    oracleImage: 'openclaw/oracle-s1:v1',
+    tokenBudgetInput: 100000,
+    tokenBudgetOutput: 25000,
   })
+
+  // Autofill: pull OpenRouter key + recommended base URL from /api/defaults if
+  // the user hasn't typed anything yet. Triggered on first mount only.
+  const autofilledRef = useRef(false)
+  const [autofillNotice, setAutofillNotice] = useState<string | null>(null)
+  useEffect(() => {
+    if (autofilledRef.current) return
+    fetchApi(`${API_BASE}/api/defaults`)
+      .then((r) => r.json())
+      .then((data: { openrouter?: { configured?: boolean; apiKey?: string; baseUrl?: string; provider?: string } }) => {
+        const or = data?.openrouter
+        if (!or?.configured || !or.apiKey) return
+        setConfig((c) => {
+          // Only autofill if user hasn't typed anything yet
+          if (c.llmApiKey && c.llmApiKey.length > 0) return c
+          autofilledRef.current = true
+          return {
+            ...c,
+            llmApiKey: or.apiKey ?? c.llmApiKey,
+            llmBaseUrl: or.baseUrl ?? c.llmBaseUrl,
+            llmProvider: or.provider ?? 'openai-completions',
+            llmProxy: '',
+          }
+        })
+        setAutofillNotice('OpenRouter key + base URL autofilled from referee env. Pick a Phase A template above to start a one-click run.')
+      })
+      .catch(() => {})
+  }, [])
 
   const attackDuration = Math.max(0, config.totalDuration - config.defenseDuration)
   const canStart = config.matchName.trim().length > 0 && config.players.length > 0
@@ -122,7 +167,14 @@ const ConfigPage: React.FC = () => {
         if (tplConfig) {
           const match = tplConfig.match as Record<string, unknown> | undefined
           const llm = tplConfig.llm as Record<string, unknown> | undefined
-          const players = tplConfig.players as Player[] | undefined
+          const players = tplConfig.players as Array<Partial<Player> & { is_agent?: boolean; backend_type?: string; backend_config?: PlayerBackendConfig }> | undefined
+          const tplMode = (tplConfig.mode as MatchMode | undefined) ?? 'hvh'
+          const tplScenario = (tplConfig.scenario_id as string | undefined) ?? 'S1'
+          const tplOracle = (tplConfig.oracle_image as string | undefined)
+          const tplTarget = (tplConfig.target_image as string | undefined)
+          const tplBudgetIn = (tplConfig.token_budget_input as number | undefined) ?? 100000
+          const tplBudgetOut = (tplConfig.token_budget_output as number | undefined) ?? 25000
+          const tplScoring = tplConfig.scoring as ConfigState['scoring']
           setConfig((c) => ({
             ...c,
             matchName: (match?.name as string) ?? c.matchName,
@@ -135,12 +187,14 @@ const ConfigPage: React.FC = () => {
                 : c.repeatCount,
             llmProvider: (llm?.provider as string) ?? c.llmProvider,
             llmBaseUrl: (llm?.baseUrl as string) ?? c.llmBaseUrl,
+            // Keep autofilled apiKey unless template carries an explicit one
+            llmApiKey: (llm?.apiKey as string) ?? c.llmApiKey,
+            llmProxy: (llm?.proxy as string | undefined) ?? c.llmProxy,
             playerCount: players ? players.length : c.playerCount,
             players: players
               ? players.map((p, i) => {
-                  const bt = (p as { backendType?: string }).backendType ?? 
-                             ((p as { backend_type?: string }).backend_type) ?? 
-                             'openclaw'
+                  const bt = p.backendType ?? p.backend_type ?? 'openclaw'
+                  const isAgent = typeof p.is_agent === 'boolean' ? p.is_agent : true
                   return {
                     id: p.id ?? i + 1,
                     name: p.name ?? `Player ${p.id ?? i + 1}`,
@@ -148,12 +202,18 @@ const ConfigPage: React.FC = () => {
                     apiKey: '',
                     gatewayPort: p.gatewayPort ?? 18789 + i,
                     backendType: bt === 'hermes' ? 'hermes' as const : 'openclaw' as const,
-                    backendConfig: (p as { backendConfig?: PlayerBackendConfig }).backendConfig ?? 
-                                  ((p as { backend_config?: PlayerBackendConfig }).backend_config as PlayerBackendConfig) ?? 
-                                  {},
+                    backendConfig: p.backendConfig ?? p.backend_config ?? {},
+                    isAgent,
                   }
                 })
               : c.players,
+            mode: tplMode,
+            scenarioId: tplScenario,
+            oracleImage: tplOracle ?? c.oracleImage,
+            targetImage: tplTarget ?? c.targetImage,
+            tokenBudgetInput: tplBudgetIn,
+            tokenBudgetOutput: tplBudgetOut,
+            scoring: tplScoring ?? c.scoring,
           }))
         }
         fetchApi(`${API_BASE}/api/templates/${id}/use`, { method: 'POST' }).catch(() => {})
@@ -239,6 +299,7 @@ const ConfigPage: React.FC = () => {
           profile_name: p.backendConfig.profileName ?? null,
           extra_env: p.backendConfig.extraEnv ?? {},
         },
+        is_agent: p.isAgent,
       })),
       scoring: config.scoring,
       flags: {
@@ -246,6 +307,11 @@ const ConfigPage: React.FC = () => {
       },
       target_image: config.targetImage,
       agent_image: config.agentImage,
+      mode: config.mode,
+      scenario_id: config.scenarioId,
+      oracle_image: config.oracleImage,
+      token_budget_input: config.tokenBudgetInput,
+      token_budget_output: config.tokenBudgetOutput,
     }
 
     try {
@@ -326,6 +392,90 @@ const ConfigPage: React.FC = () => {
           </div>
         </div>
         <div className="text-xs text-slate-300">{templates.length ? templates.length + ' templates' : 'No templates'}</div>
+        {autofillNotice && (
+          <div className="rounded-md border border-emerald-700/60 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-100">
+            {autofillNotice}
+          </div>
+        )}
+      </section>
+
+      <section className="bg-slate-800/60 border border-slate-700 rounded-md p-4 space-y-3">
+        <h3 className="text-lg font-semibold">Benchmark mode</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+          <div>
+            <label className="block text-slate-300">Mode</label>
+            <select
+              className="w-full bg-slate-700 rounded-md px-2 py-1"
+              value={config.mode}
+              onChange={(e) => {
+                const m = e.target.value as MatchMode
+                setConfig((c) => {
+                  const next = { ...c, mode: m }
+                  // attack_only requires a victim slot; defense_only is single-player.
+                  if (m === 'attack_only' && c.players.length === 1) {
+                    next.players = [
+                      { ...c.players[0], isAgent: true },
+                      defaultPlayer(2, 18790),
+                    ]
+                    next.players[1].isAgent = false
+                    next.players[1].name = 'unpatched-victim'
+                    next.playerCount = 2
+                  } else if (m === 'defense_only' && c.players.length > 1) {
+                    next.players = [{ ...c.players[0], isAgent: true }]
+                    next.playerCount = 1
+                  }
+                  return next
+                })
+              }}
+            >
+              <option value="hvh">HvH (head-to-head; both phases)</option>
+              <option value="defense_only">defense-only (agent patches; oracle attacks)</option>
+              <option value="attack_only">attack-only (agent attacks unpatched victim)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-slate-300">Scenario</label>
+            <select
+              className="w-full bg-slate-700 rounded-md px-2 py-1"
+              value={config.scenarioId}
+              onChange={(e) => setConfig((c) => ({ ...c, scenarioId: e.target.value }))}
+            >
+              <option value="S1">S1 — SQLi + SSRF + static leak + priv-esc</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-slate-300">Oracle image (defense-only)</label>
+            <input
+              className="w-full bg-slate-700 rounded-md px-2 py-1"
+              value={config.oracleImage ?? ''}
+              onChange={(e) => setConfig((c) => ({ ...c, oracleImage: e.target.value }))}
+              placeholder="openclaw/oracle-s1:v1"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-300">Token budget — input</label>
+            <input
+              type="number"
+              className="w-full bg-slate-700 rounded-md px-2 py-1"
+              value={config.tokenBudgetInput}
+              onChange={(e) => setConfig((c) => ({ ...c, tokenBudgetInput: Number(e.target.value) || 0 }))}
+            />
+          </div>
+          <div>
+            <label className="block text-slate-300">Token budget — output</label>
+            <input
+              type="number"
+              className="w-full bg-slate-700 rounded-md px-2 py-1"
+              value={config.tokenBudgetOutput}
+              onChange={(e) => setConfig((c) => ({ ...c, tokenBudgetOutput: Number(e.target.value) || 0 }))}
+            />
+          </div>
+        </div>
+        <div className="text-xs text-slate-400">
+          {config.mode === 'attack_only' && 'Player 2 is auto-set as a passive victim target (is_agent=false): no LLM, just flags to capture.'}
+          {config.mode === 'defense_only' && 'Single agent player. After the defense window the oracle sidecar runs against its target.'}
+          {config.mode === 'hvh' && 'All players are full agents. Defense window then open arena for attack.'}
+        </div>
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -448,6 +598,21 @@ const ConfigPage: React.FC = () => {
                 <label className="text-xs text-slate-200">Gateway port</label>
                 <input className="w-full bg-slate-600 rounded-md px-2 py-1" value={p.gatewayPort} readOnly />
               </div>
+              <label className="flex items-center gap-2 text-xs text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={p.isAgent}
+                  onChange={(e) => {
+                    const isAgent = e.target.checked
+                    setConfig((c) => {
+                      const players = c.players.slice()
+                      players[idx] = { ...players[idx], isAgent }
+                      return { ...c, players }
+                    })
+                  }}
+                />
+                <span>Agent player (uncheck for passive victim target — no LLM, just flags)</span>
+              </label>
               <div>
                 <label className="text-xs text-slate-200">Backend</label>
                 <select
