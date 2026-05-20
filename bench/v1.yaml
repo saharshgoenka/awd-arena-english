@@ -17,6 +17,10 @@ defaults:
     provider: openai-completions
     baseUrl: https://openrouter.ai/api/v1
     # apiKey is injected by the bench runner from the OPENROUTER_API_KEY env var
+    # Empty proxy = direct connection. The repo's legacy default was a
+    # China-region SOCKS/HTTP proxy on host.docker.internal:7897; outside that
+    # network agents must reach OpenRouter directly.
+    proxy: ""
   match:
     duration: 2400            # 15min defense + 25min attack
     phases:
@@ -46,12 +50,16 @@ scenarios:
 models:
   # The two leaderboard models for Phase A. RESEARCH_PLAN.md §4.3 names DeepSeek + Qwen +
   # Llama; Phase A picks the first two per user direction 2026-05-19.
+  # Originally specified `deepseek/deepseek-chat:free` and `qwen/qwen-2.5-coder-32b-instruct:free`
+  # but those slugs no longer have endpoints on OpenRouter (verified 2026-05-19).
+  # Substituted with the current free-tier equivalents from the same labs; recorded
+  # as a deviation in results.md §10.
   - id: deepseek_free
-    openrouter_slug: deepseek/deepseek-chat:free
-    label: DeepSeek-V3 (free)
+    openrouter_slug: deepseek/deepseek-v4-flash:free
+    label: DeepSeek-V4-Flash (free)
   - id: qwen_coder_free
-    openrouter_slug: qwen/qwen-2.5-coder-32b-instruct:free
-    label: Qwen2.5-Coder-32B (free)
+    openrouter_slug: qwen/qwen3-coder:free
+    label: Qwen3-Coder (free)
 
 phases:
   - name: A

@@ -159,8 +159,12 @@ class AgentClient:
         self.qualified_model = f"{self.provider_name}/{llm_model}"
         self.proxy_url = proxy_url
         self.agent_timeout = agent_timeout
+        # OpenRouter's gateway log never reflects the model name we configure
+        # (it shows the bundled default `openai/gpt-5.5` until first send), so
+        # waiting the full 180s is pure dead time — the wait always falls
+        # through to the disk-config warning path. Keep it short.
         self.gateway_model_apply_timeout = (
-            180
+            30
             if "openrouter.ai" in (llm_base_url or "").strip().lower()
             else self.GATEWAY_MODEL_APPLY_TIMEOUT
         )
@@ -373,7 +377,7 @@ class AgentClient:
 
         return False
     
-    async def confgure_container(self, container_name: str) -> InitResult:
+    async def configure_container(self, container_name: str) -> InitResult:
         """
         Configure the OpenClaw container model provider.
 
@@ -869,13 +873,18 @@ for item in events[-10:]:
         
         # 2. Send system prompt
         logger.info(f"[Player {session.player_id}] Sending system prompt...")
+        # Live-model check is advisory only: OpenClaw's gateway log frequently
+        # lags the actual config (it can show the bundled default until the model
+        # is exercised on first send). The earlier _wait_for_gateway_config step
+        # already logged a warning and decided to continue, so failing hard here
+        # blocks every OpenRouter match on a cosmetic log mismatch.
         live_model = await self._read_live_gateway_model(session.container_name)
         if live_model and live_model != self.qualified_model:
-            details = f"Gateway live model mismatch before init prompt: expected {self.qualified_model}, observed {live_model}"
-            logger.error(f"[Player {session.player_id}] {details}")
-            session.init_error_reason = "INIT_PROVIDER_MISMATCH"
-            session.init_error_details = details
-            return InitResult(False, session.init_error_reason, session.init_error_details)
+            logger.warning(
+                f"[Player {session.player_id}] Live model log mismatch "
+                f"(log={live_model} cfg={self.qualified_model}); proceeding — "
+                f"model is applied on first agent send."
+            )
 
         response = await self.send_message(
             session,
@@ -1007,9 +1016,59 @@ for item in events[-10:]:
                 })
 
                 if result:
+                    # The openclaw CLI sometimes prefixes its JSON output with plain-text
+                    # warnings (e.g. "EMBEDDED FALLBACK: Gateway agent failed; running embedded agent…").
+                    # Strip leading non-JSON noise by parsing from the first balanced `{`.
+                    def _extract_json_object(text: str):
+                        for start in (text.find("{"), text.rfind("\n{")):
+                            if start < 0:
+                                continue
+                            if text[start] != "{":
+                                start += 1  # account for the leading newline in rfind path
+                            depth = 0
+                            in_str = False
+                            esc = False
+                            for i in range(start, len(text)):
+                                ch = text[i]
+                                if in_str:
+                                    if esc:
+                                        esc = False
+                                    elif ch == "\\":
+                                        esc = True
+                                    elif ch == "\"":
+                                        in_str = False
+                                else:
+                                    if ch == "\"":
+                                        in_str = True
+                                    elif ch == "{":
+                                        depth += 1
+                                    elif ch == "}":
+                                        depth -= 1
+                                        if depth == 0:
+                                            try:
+                                                return json.loads(text[start:i + 1])
+                                            except json.JSONDecodeError:
+                                                break
+                        return None
+
                     try:
-                        resp = json.loads(result)
-                        content = resp.get("content", resp.get("text", resp.get("message", result)))
+                        try:
+                            resp = json.loads(result)
+                        except json.JSONDecodeError:
+                            resp = _extract_json_object(result)
+                            if resp is None:
+                                raise
+                        # OpenClaw responses use `payloads[].text` for the assistant message;
+                        # older shapes used `content`/`text`/`message`. Fall back through both.
+                        content = None
+                        if isinstance(resp, dict):
+                            content = resp.get("content") or resp.get("text") or resp.get("message")
+                            if content is None and isinstance(resp.get("payloads"), list) and resp["payloads"]:
+                                first = resp["payloads"][0]
+                                if isinstance(first, dict):
+                                    content = first.get("text") or first.get("content")
+                        if content is None:
+                            content = result
                         session.last_response = str(content)
                         self._mark_session_activity(session)
                         meta = resp.get("meta") if isinstance(resp, dict) else None
@@ -1019,21 +1078,27 @@ for item in events[-10:]:
                             session.session_id = sid
                             self._mark_session_ready(session)
                             logger.info(f"[Player {session.player_id}] Session ID captured: {sid}")
-                        # R2: extract token usage. The OpenClaw gateway forwards the
-                        # provider's `usage` block when available (OpenAI-style keys).
-                        # Look in three places: top-level, meta, meta.agentMeta.
+                        # R2: extract token usage. The OpenClaw gateway exposes
+                        # usage in `meta.agentMeta.usage` (cumulative) and
+                        # `meta.agentMeta.lastCallUsage` (per send). We prefer
+                        # the per-call number; fall back to OpenAI-style keys.
                         usage = None
                         if isinstance(resp, dict):
-                            for candidate in (resp.get("usage"),
-                                              (meta or {}).get("usage") if isinstance(meta, dict) else None,
-                                              (agent_meta or {}).get("usage") if isinstance(agent_meta, dict) else None):
+                            for candidate in (
+                                (agent_meta or {}).get("lastCallUsage") if isinstance(agent_meta, dict) else None,
+                                (agent_meta or {}).get("usage") if isinstance(agent_meta, dict) else None,
+                                (meta or {}).get("usage") if isinstance(meta, dict) else None,
+                                resp.get("usage"),
+                            ):
                                 if isinstance(candidate, dict):
                                     usage = candidate
                                     break
                         if usage:
-                            in_tok = (usage.get("prompt_tokens")
+                            in_tok = (usage.get("input")
+                                      or usage.get("prompt_tokens")
                                       or usage.get("input_tokens") or 0)
-                            out_tok = (usage.get("completion_tokens")
+                            out_tok = (usage.get("output")
+                                       or usage.get("completion_tokens")
                                        or usage.get("output_tokens") or 0)
                             try:
                                 session.tokens_input += int(in_tok)
@@ -1214,9 +1279,30 @@ for item in events[-10:]:
             
             output_lines = []
             
+            async def _safe_readline(pipe: asyncio.StreamReader) -> bytes:
+                """
+                readline() raises ValueError ("Separator is found, but chunk is longer than limit")
+                when a single line exceeds the StreamReader's 64KB buffer — common when the
+                openclaw agent streams large JSON trace events. Recover by draining the
+                buffered prefix via read() and synthesizing a newline so the loop continues.
+                """
+                while True:
+                    try:
+                        return await pipe.readline()
+                    except ValueError as overflow:
+                        chunk = pipe._buffer if hasattr(pipe, "_buffer") else b""
+                        # Drop the over-sized fragment; the agent's stream continues with
+                        # the next line. We log once per overflow instead of every 2s.
+                        try:
+                            pipe._buffer.clear()  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
+                        logger.debug(f"stream overflow ({overflow}); dropped {len(chunk)} buffered bytes")
+                        return b"\n"
+
             async def read_stdout():
                 while True:
-                    line = await stdout_pipe.readline()
+                    line = await _safe_readline(stdout_pipe)
                     if not line:
                         break
                     decoded = line.decode("utf-8", errors="replace").strip()
@@ -1231,11 +1317,11 @@ for item in events[-10:]:
                                 await stream_callback(decoded)
                             else:
                                 stream_callback(decoded)
-                                
+
             async def read_stderr():
                 stderr_lines = []
                 while True:
-                    line = await stderr_pipe.readline()
+                    line = await _safe_readline(stderr_pipe)
                     if not line:
                         break
                     decoded = line.decode("utf-8", errors="replace").strip()

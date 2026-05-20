@@ -1850,7 +1850,14 @@ class RefereeEngine:
                     raise RuntimeError(f"Failed to generate SSH keypair for player {pid}: {exc}") from exc
                 ssh_authorized_key = match.player_ssh_key_materials[pid].public_key.rstrip("\n")
             else:
-                ssh_authorized_key = ""
+                # The target entrypoint exits if MAINTENANCE_AUTHORIZED_KEY is empty
+                # (target-image/ctf/entrypoint.sh). Victim-only players don't accept
+                # SSH from anyone, but we still pass a valid-looking key so the
+                # container starts. The matching private key is never used.
+                ssh_authorized_key = (
+                    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlace1HolderUnusedKeyForVictimSlot"
+                    " unused-victim-placeholder"
+                )
 
             flags = {
                 f"FLAG_{i}": f"FLAG{{{secrets.token_hex(16)}}}"

@@ -19,11 +19,18 @@ class OpenClawBackendAdapter(AgentBackendAdapter):
 
         environment = {
             "OPENAI_API_KEY": player_config.apiKey or config.llm.apiKey,
-            "HTTPS_PROXY": config.llm.proxy,
-            "HTTP_PROXY": config.llm.proxy,
             "NO_PROXY": "localhost,127.0.0.1,172.16.0.0/12,10.0.0.0/8,host.docker.internal,.local",
             "TZ": CONTAINER_TIMEZONE,
         }
+        # Only set HTTPS_PROXY / HTTP_PROXY if a proxy is actually configured.
+        # An empty/None proxy would otherwise be exported as an env var with value
+        # "", which some HTTP libs treat as "use empty proxy" and break OpenRouter
+        # connectivity. The China-region default was http://host.docker.internal:7897;
+        # outside China just leave it unset.
+        proxy = (config.llm.proxy or "").strip()
+        if proxy:
+            environment["HTTPS_PROXY"] = proxy
+            environment["HTTP_PROXY"] = proxy
         if isinstance(extra_env, dict):
             environment.update({str(key): str(value) for key, value in extra_env.items()})
 
