@@ -1,14 +1,5 @@
 # Research Plan — OpenClaw AWD as an LLM Cyber-Offense/Defense Benchmark
 
-Owner: Saharsh
-PI: Peiran Wang
-Drafted: 2026-05-19
-Target submission: workshop / short paper venue along the lines of the prior "purpose paper" track Peiran referenced (1st cycle EMNLP-style; fallback NeurIPS workshop). Confirm venue with Peiran before freeze.
-
-This plan is the executable spec for the AWD benchmark experiment described in the 2026-05-12 All-Project Sync. It is written so a future Claude session can pick it up and make forward progress without re-deriving scope from the transcript.
-
----
-
 ## 1. Research question
 
 > **Can current LLM agents both attack and defend realistic web targets in a head-to-head AWD setting, and how do offense and defense capabilities trade off across model families, sizes, and price tiers?**
