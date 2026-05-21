@@ -86,12 +86,80 @@ def _time_to_first_flag(match) -> Optional[float]:
 
 
 def _token_usage(match) -> Dict[str, int]:
-    usage = getattr(match, "token_usage", None) or {}
+    """Sum per-message token usage out of each player's openclaw session log.
+
+    Background: agent_client tries to extract `meta.agentMeta.lastCallUsage`
+    on each gateway send, but the openclaw gateway does not surface usage
+    there for openai-completions responses (verified 2026-05-20 against
+    deepseek-v4-flash). The real numbers are written by openclaw itself into
+    the session JSONL on each assistant `message` block as `usage.input` and
+    `usage.output`. We collect that file into `match.agent_logs` before the
+    JSONL writer runs, so parsing it here closes the loop.
+
+    Falls back to the (likely-zero) `match.token_usage` totals if the session
+    logs are missing or unparseable, so the call never crashes the writer.
+    """
+    fallback = getattr(match, "token_usage", None) or {}
+    total_in = 0
+    total_out = 0
+    total_msgs = 0
+
+    session_logs = getattr(match, "agent_logs", None) or {}
+    for _pid, log_content in session_logs.items():
+        if not isinstance(log_content, str):
+            continue
+        for raw_line in log_content.splitlines():
+            line = raw_line.strip()
+            if not line or not line.startswith("{"):
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if obj.get("type") != "message":
+                continue
+            msg = obj.get("message") or {}
+            if msg.get("role") != "assistant":
+                continue
+            usage = msg.get("usage") or {}
+            # openclaw shape: {"input": ..., "output": ..., "totalTokens": ...}
+            in_tok = usage.get("input") or usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+            out_tok = usage.get("output") or usage.get("completion_tokens") or usage.get("output_tokens") or 0
+            try:
+                in_tok = int(in_tok)
+                out_tok = int(out_tok)
+            except (TypeError, ValueError):
+                continue
+            if in_tok == 0 and out_tok == 0:
+                # Likely a `stopReason=error` message with no real call; skip.
+                continue
+            total_in += in_tok
+            total_out += out_tok
+            total_msgs += 1
+
+    if total_msgs == 0 and fallback:
+        # Session-log parsing produced nothing — surface whatever the agent_client
+        # path captured so callers can tell parsing failed vs agent silent.
+        return {
+            "input_tokens": int(fallback.get("input_tokens", 0)),
+            "output_tokens": int(fallback.get("output_tokens", 0)),
+            "messages": int(fallback.get("messages", 0)),
+            "budget_exceeded": bool(fallback.get("budget_exceeded", False)),
+            "source": "agent_client_fallback",
+        }
+
+    budget_in = getattr(getattr(match, "config", None), "token_budget_input", 0) or 0
+    budget_out = getattr(getattr(match, "config", None), "token_budget_output", 0) or 0
+    budget_exceeded = bool(
+        (budget_in and total_in > budget_in)
+        or (budget_out and total_out > budget_out)
+    )
     return {
-        "input_tokens": int(usage.get("input_tokens", 0)),
-        "output_tokens": int(usage.get("output_tokens", 0)),
-        "messages": int(usage.get("messages", 0)),
-        "budget_exceeded": bool(usage.get("budget_exceeded", False)),
+        "input_tokens": total_in,
+        "output_tokens": total_out,
+        "messages": total_msgs,
+        "budget_exceeded": budget_exceeded,
+        "source": "session_log",
     }
 
 

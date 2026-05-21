@@ -1,0 +1,48 @@
+# 1-match verify run after run_writer.py fix.
+# Single DeepSeek-paid defense_only on S1 — confirms new token_usage shows
+# real numbers in the JSONL instead of {0,0}.
+
+bench_run_id: smoke-verify-v1
+runs_dir: referee-engine/runs/v1
+budget_cap_usd: 5.00
+concurrency: 1
+
+defaults:
+  llm:
+    provider: openai-completions
+    baseUrl: https://openrouter.ai/api/v1
+    proxy: ""
+  match:
+    duration: 360
+    phases:
+      defense: 180
+      attack: 180
+  scoring:
+    attackSuccess: 10
+    defenseFailure: -10
+    slaViolation: -5
+  flags:
+    refreshInterval: 120
+    format: "FLAG{{{hash}}}"
+  token_budget_input: 500000
+  token_budget_output: 50000
+
+scenarios:
+  S1:
+    target_image: openclaw/ctf-target:v1
+    oracle_image: openclaw/oracle-s1:v1
+    flag_slot_count: 4
+
+models:
+  - id: deepseek_paid
+    openrouter_slug: deepseek/deepseek-v4-flash
+    label: DeepSeek-V4-Flash (paid)
+
+phases:
+  - name: verify
+    description: Single-match verify of token_usage fix
+    grid:
+      models: [deepseek_paid]
+      scenarios: [S1]
+      modes: [defense_only]
+      k: 1

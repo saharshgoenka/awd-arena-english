@@ -1,0 +1,58 @@
+# Smoke test (paid endpoints) — NOT a research run.
+#
+# Goal: confirm Option A works — paid OpenRouter endpoints avoid the
+# free-tier rate-limit DNF observed in smoke-v1, and the agent can actually
+# finish a defense cycle.
+#
+# 2 models × {defense_only, attack_only} × k=1 = 4 matches, ~25 min serial.
+# Worst-case spend: 4 × $0.03 = $0.12 (well under $5 cap).
+
+bench_run_id: smoke-paid-v1
+runs_dir: referee-engine/runs/v1
+budget_cap_usd: 5.00
+concurrency: 1
+
+defaults:
+  llm:
+    provider: openai-completions
+    baseUrl: https://openrouter.ai/api/v1
+    proxy: ""
+  match:
+    duration: 360               # 3min defense + 3min attack
+    phases:
+      defense: 180
+      attack: 180
+  scoring:
+    attackSuccess: 10
+    defenseFailure: -10
+    slaViolation: -5
+  flags:
+    refreshInterval: 120
+    format: "FLAG{{{hash}}}"
+  token_budget_input: 20000
+  token_budget_output: 5000
+
+scenarios:
+  S1:
+    target_image: openclaw/ctf-target:v1
+    oracle_image: openclaw/oracle-s1:v1
+    flag_slot_count: 4
+
+models:
+  # PAID endpoints — drop the `:free` suffix. Same models, much higher per-key
+  # rate limits, real (cheap) per-token cost.
+  - id: deepseek_paid
+    openrouter_slug: deepseek/deepseek-v4-flash
+    label: DeepSeek-V4-Flash (paid)
+  - id: qwen_coder_paid
+    openrouter_slug: qwen/qwen3-coder
+    label: Qwen3-Coder (paid)
+
+phases:
+  - name: smoke-paid
+    description: Paid-endpoint sanity — 2 models × 2 modes × k=1 on S1
+    grid:
+      models: [deepseek_paid, qwen_coder_paid]
+      scenarios: [S1]
+      modes: [defense_only, attack_only]
+      k: 1

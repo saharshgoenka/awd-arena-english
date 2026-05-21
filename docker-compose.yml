@@ -30,6 +30,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - referee_data:/app/data
+      # Bind-mount the host's runs directory into the container so the bench
+      # runner on the host can poll for the per-match JSONL files that
+      # run_writer writes from inside the referee. Without this, files land at
+      # /app/referee-engine/runs/v1/matches/ in the container only.
+      - ./referee-engine/runs:/app/referee-engine/runs
     environment:
       - OPENCLAW_DB_PATH=/app/data/openclaw.db
       - OPENCLAW_TEMPLATES_PATH=/app/data/templates.json
