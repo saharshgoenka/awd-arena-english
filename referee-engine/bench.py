@@ -44,18 +44,38 @@ logging.basicConfig(
 log = logging.getLogger("bench")
 
 
-# Per-Mtoken pricing for the paid endpoints corresponding to each free-tier slug.
-# Used to compute the cost-per-match estimate when a free slug rate-limits and
-# the bench runner falls back to the paid endpoint. Numbers are intentionally
-# conservative — adjust after Phase A measures actual usage.
-PAID_FALLBACK_PRICES = {
-    "deepseek/deepseek-chat:free": {"in_per_mtok": 0.27, "out_per_mtok": 1.10,
-                                      "paid_slug": "deepseek/deepseek-chat"},
-    "qwen/qwen-2.5-coder-32b-instruct:free": {"in_per_mtok": 0.18, "out_per_mtok": 0.18,
-                                                "paid_slug": "qwen/qwen-2.5-coder-32b-instruct"},
-    "meta-llama/llama-3.3-70b-instruct:free": {"in_per_mtok": 0.25, "out_per_mtok": 0.65,
-                                                 "paid_slug": "meta-llama/llama-3.3-70b-instruct"},
+# Per-Mtoken pricing for OpenRouter slugs used in Phase A/B. Numbers are pulled
+# from OpenRouter's model pages (verified 2026-05-21 — see results.md §2.6).
+# Cached-read pricing is not yet applied: the bench summary is an estimate to
+# compare against OpenRouter `/auth/key` (which is authoritative). Cache savings
+# can subtract 10–20% for DeepSeek; this estimate is an upper bound.
+#
+# Keyed by **paid slug** because bench yamls now reference paid endpoints
+# directly (the :free variants 429-rate-limited mid-match during Phase A smoke).
+# :free keys are kept as aliases so older bench yamls still resolve.
+PRICES = {
+    # DeepSeek-V4-Flash — paid. Cached read is $0.022/M but applied only on
+    # repeated prompts; this estimate treats input as fully uncached.
+    "deepseek/deepseek-v4-flash":      {"in_per_mtok": 0.112, "out_per_mtok": 0.224},
+    "deepseek/deepseek-chat":          {"in_per_mtok": 0.27,  "out_per_mtok": 1.10},
+    # Qwen3-235B-A22B-2507 — 235B/22B-active MoE, used as the Phase A 2nd model.
+    "qwen/qwen3-235b-a22b-2507":       {"in_per_mtok": 0.071, "out_per_mtok": 0.10},
+    # Qwen3-Coder (480B/A35B) — used briefly during Phase A cost calibration
+    # then swapped out for the cheaper 235B-A22B (results.md §2.6).
+    "qwen/qwen3-coder":                {"in_per_mtok": 0.22,  "out_per_mtok": 1.80},
+    "qwen/qwen-2.5-coder-32b-instruct":{"in_per_mtok": 0.18,  "out_per_mtok": 0.18},
+    "meta-llama/llama-3.3-70b-instruct":{"in_per_mtok": 0.25, "out_per_mtok": 0.65},
 }
+
+# Older bench yamls may still pass :free slugs; resolve them to the paid entry.
+_FREE_TO_PAID = {
+    "deepseek/deepseek-chat:free":            "deepseek/deepseek-chat",
+    "qwen/qwen-2.5-coder-32b-instruct:free":  "qwen/qwen-2.5-coder-32b-instruct",
+    "meta-llama/llama-3.3-70b-instruct:free": "meta-llama/llama-3.3-70b-instruct",
+}
+
+# Backwards-compat alias for older imports.
+PAID_FALLBACK_PRICES = PRICES
 
 
 @dataclass
@@ -208,11 +228,25 @@ def poll_match_jsonl(matches_dir: Path, match_id: str, total_timeout_s: int) -> 
     return None
 
 
+_unpriced_slugs_warned: set = set()
+
+
 def estimate_match_cost(record: Dict[str, Any], openrouter_slug: str) -> float:
-    """Convert token_usage into $ using the paid-fallback price table."""
+    """Convert token_usage into $ using the PRICES table.
+
+    Resolves :free → paid alias for older yamls. Logs once per unknown slug so
+    the warning isn't lost in the per-match summary stream.
+    """
     usage = record.get("token_usage") or {}
-    price = PAID_FALLBACK_PRICES.get(openrouter_slug)
+    slug = _FREE_TO_PAID.get(openrouter_slug, openrouter_slug)
+    price = PRICES.get(slug)
     if not price:
+        if openrouter_slug not in _unpriced_slugs_warned:
+            log.warning(
+                f"estimate_match_cost: no price entry for slug '{openrouter_slug}'; "
+                f"reporting $0. Add it to bench.PRICES with values from OpenRouter."
+            )
+            _unpriced_slugs_warned.add(openrouter_slug)
         return 0.0
     in_tok = usage.get("input_tokens", 0) or 0
     out_tok = usage.get("output_tokens", 0) or 0
