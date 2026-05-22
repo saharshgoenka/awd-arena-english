@@ -422,7 +422,19 @@ This is striking — **3 of 3 valid cells produced identical scores and identica
 
 **Open issues from this run:**
 
-1. **Phase-timing runaway resurfaced on the Qwen def-only cell.** 36 min wall clock for a 6-min configured match. The bench-side force-end (3× duration timeout) kicked in correctly and stopped further spend, but the underlying referee bug is still there. Different signature than the §2.6 fix: the JSONL wrote `status=finished`, `dnf=False`, `duration=None`, only 5 messages — suggests the match never made it out of the defense window. Could be related to the prompt rebuild + 800K token cap; needs a focused repro.
+1. **OpenClaw → OpenRouter call hung for 18 minutes on the Qwen def-only cell.** Root cause (post-mortem on session log + agent bundle):
+   - t=06s: init prompt delivered, model `qwen/qwen3-235b-a22b-2507` correctly applied.
+   - t=06–21s: agent made SSH probes, read full `/app/app.py` (17KB) into context.
+   - t=21s onward: complete silence — no assistant message, no tool calls, session log frozen at 14 records.
+   - t=1110s: bench-side force-end fires; referee tears down cleanly.
+
+   The OpenClaw daemon (v2026.5.7) was waiting on an OpenRouter `/chat/completions` response that never arrived and apparently has **no per-request HTTP timeout** in its openai-completions provider. This is **not** phase-timing runaway (that was about phases over-running their budget while still working); this is "single model call stalls, agent loop frozen." Different signature, different cause, different fix.
+
+   The §2.6 bench-side force-end (3× duration timeout) saved us here — bench killed the match cleanly and the next one ran fine. Frequency: 1 in 6 Qwen3-235B calls in this session.
+
+   Two possible fixes, neither in our repo:
+   - **Configure a per-request timeout in OpenClaw's openai-completions provider** via `openclaw.json` (if the schema supports `timeoutMs` or similar). Cleanest.
+   - **Add a referee-side stall detector** on the AGENT_STREAM callback: if no stream event for >120s during a phase, force-end. Generic safety net against any provider hang.
 2. **Token telemetry still blank for def-only matches.** Both DeepSeek def-only samples reported `0/0/0` despite the agent clearly running and emitting patches. The atk-only path captures usage fine. The fix needs to extend to whatever stream the oracle/defense path uses, or read from AGENT_STREAM events directly.
 3. **Updated Phase A grid (k=2, 3 of 4 cells confirmed, 1 cell pending re-run):**
 
