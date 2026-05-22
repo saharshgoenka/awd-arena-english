@@ -422,19 +422,19 @@ This is striking — **3 of 3 valid cells produced identical scores and identica
 
 **Open issues from this run:**
 
-1. **OpenClaw → OpenRouter call hung for 18 minutes on the Qwen def-only cell.** Root cause (post-mortem on session log + agent bundle):
-   - t=06s: init prompt delivered, model `qwen/qwen3-235b-a22b-2507` correctly applied.
-   - t=06–21s: agent made SSH probes, read full `/app/app.py` (17KB) into context.
-   - t=21s onward: complete silence — no assistant message, no tool calls, session log frozen at 14 records.
-   - t=1110s: bench-side force-end fires; referee tears down cleanly.
+1. **Qwen def-only DNF: host sleep mid-match, not a code bug.** Post-mortem on the agent session log:
+   - 03:29:34: model `qwen/qwen3-235b-a22b-2507` correctly applied.
+   - 03:30:06–03:30:21: agent ran 4 tool round-trips in 15s (SSH probe, supervisorctl status, /health, read /app/app.py).
+   - 03:30:21 onward: session log frozen at 14 records; no further events.
+   - 04:07:25: bench-side force-end fires; referee tears down cleanly.
 
-   The OpenClaw daemon (v2026.5.7) was waiting on an OpenRouter `/chat/completions` response that never arrived and apparently has **no per-request HTTP timeout** in its openai-completions provider. This is **not** phase-timing runaway (that was about phases over-running their budget while still working); this is "single model call stalls, agent loop frozen." Different signature, different cause, different fix.
+   The Qwen atk-only run that followed also hit the bench timeout. The laptop was closed around the time Qwen def-only started; macOS suspended Docker, freezing the OpenClaw container mid-HTTP-call. On resume the TCP socket to OpenRouter was stale, the daemon never recovered, and the bench-side force-end (§2.6 fix) correctly killed both matches. **DeepSeek's runs finished before the suspend, which is why they're clean.**
 
-   The §2.6 bench-side force-end (3× duration timeout) saved us here — bench killed the match cleanly and the next one ran fine. Frequency: 1 in 6 Qwen3-235B calls in this session.
+   This DNF therefore does **not** demonstrate a real openclaw timeout bug — it demonstrates that the harness is brittle to host suspend. Two ways to harden it:
+   - **Operational:** disable macOS sleep / `caffeinate -dimsu` while a bench is running. Simplest.
+   - **Code:** add a referee-side stall detector on the AGENT_STREAM callback (no stream events for >120s during a phase → force-end). Generic safety net for any kind of host or provider hang, not just sleep.
 
-   Two possible fixes, neither in our repo:
-   - **Configure a per-request timeout in OpenClaw's openai-completions provider** via `openclaw.json` (if the schema supports `timeoutMs` or similar). Cleanest.
-   - **Add a referee-side stall detector** on the AGENT_STREAM callback: if no stream event for >120s during a phase, force-end. Generic safety net against any provider hang.
+   Whether OpenClaw's openai-completions provider has a per-request HTTP timeout is still unverified; this incident doesn't tell us.
 2. **Token telemetry still blank for def-only matches.** Both DeepSeek def-only samples reported `0/0/0` despite the agent clearly running and emitting patches. The atk-only path captures usage fine. The fix needs to extend to whatever stream the oracle/defense path uses, or read from AGENT_STREAM events directly.
 3. **Updated Phase A grid (k=2, 3 of 4 cells confirmed, 1 cell pending re-run):**
 
