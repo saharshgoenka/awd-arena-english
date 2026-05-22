@@ -2366,18 +2366,34 @@ class RefereeEngine:
 
         scoring = match.config.scoring.model_dump()
         phases = match.config.match.phases
-        prompt = PromptRenderer.render_defense_init(
-            player_id=player_id,
-            own_target_ip=player.target_ip,
-            target_port=player.target_port,
-            maintenance_auth_mode=player.maintenance_auth_mode,
-            maintenance_helper_command=player.maintenance_helper_command,
-            referee_api_url=referee_url,
-            scoring=scoring,
-            flag_refresh_interval=match.flag_refresh_interval,
-            defense_duration=phases.defense,
-            attack_duration=phases.attack,
-        )
+        mode = getattr(match.config, "mode", "hvh")
+        # attack_only matches have no defense phase: the lone agent attacks an
+        # unpatched victim. Sending defense_init here anchors the agent as a
+        # defender (observed in Phase A: DeepSeek kept SSH-patching the enemy).
+        # Use a dedicated attacker-framing prompt instead.
+        if mode == "attack_only":
+            prompt = PromptRenderer.render_attack_only_init(
+                player_id=player_id,
+                referee_api_url=referee_url,
+                player_status_url=f"{referee_url}/api/player/status",
+                player_read_token=match.player_read_tokens[player_id],
+                scoring=scoring,
+                flag_refresh_interval=match.flag_refresh_interval,
+                attack_duration=phases.attack,
+            )
+        else:
+            prompt = PromptRenderer.render_defense_init(
+                player_id=player_id,
+                own_target_ip=player.target_ip,
+                target_port=player.target_port,
+                maintenance_auth_mode=player.maintenance_auth_mode,
+                maintenance_helper_command=player.maintenance_helper_command,
+                referee_api_url=referee_url,
+                scoring=scoring,
+                flag_refresh_interval=match.flag_refresh_interval,
+                defense_duration=phases.defense,
+                attack_duration=phases.attack,
+            )
 
         try:
             init_result = await backend.initialize_agent(
@@ -2999,7 +3015,20 @@ class RefereeEngine:
                     **captured_event,
                 })
                 
+                # Skip the victim-alert path entirely for oracle submissions.
+                # The "oracle" is a deterministic reference-exploit sidecar (defense_only
+                # mode) using ORACLE_ATTACKER_ID; there is no real attacker who needs
+                # confirmation, and the victim defender has nothing useful to do with
+                # an "interrupt" alert during oracle scoring. Worse, the alert path
+                # below blocks the submission lock for up to 120s while it awaits the
+                # victim agent's acknowledgement — if the defender's agent loop is
+                # idle (likely during attack phase of defense_only), that timeout
+                # fires past the oracle's own 10s HTTP timeout, causing the oracle
+                # to log a phantom "submit error: timed out" while the referee has
+                # actually recorded the submission. Race documented 2026-05-20.
                 victim_session = match.agent_sessions.get(result["victim_id"])
+                if submission.player_id == ORACLE_ATTACKER_ID:
+                    victim_session = None
                 if victim_session:
                     victim_backend = self._get_player_backend(match, result["victim_id"])
                     victim_client = self._get_player_client(match, result["victim_id"])

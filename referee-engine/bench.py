@@ -268,15 +268,30 @@ def run(args: argparse.Namespace) -> int:
         state.cells_dispatched += 1
         log.info(f"[{cell.cell_label}] match_id={match_id}; polling for completion")
 
-        # Total per-match timeout: defense + attack + 5min startup/teardown slack.
-        match_total = (cfg.get("defaults", {}).get("match", {}).get("phases", {}).get("defense", 900)
-                       + cfg.get("defaults", {}).get("match", {}).get("phases", {}).get("attack", 1500)
-                       + 300)
+        # Total per-match timeout: 3× declared (defense + attack) + 5min slack.
+        # Matches occasionally over-run their declared phase length (observed
+        # 2026-05-21: a 10-min match spent 36 min in defense phase). The 3×
+        # multiplier absorbs that without unbounded waits; if we hit it, we
+        # actively end the match via the referee API so it stops spending.
+        phases = cfg.get("defaults", {}).get("match", {}).get("phases", {})
+        declared_total = int(phases.get("defense", 900)) + int(phases.get("attack", 1500))
+        match_total = declared_total * 3 + 300
         record = poll_match_jsonl(matches_dir, match_id, total_timeout_s=match_total)
         if record is None:
-            log.error(f"[{cell.cell_label}] JSONL never appeared within {match_total}s; marking DNF")
-            state.cells_dnf += 1
-            continue
+            log.error(f"[{cell.cell_label}] JSONL never appeared within {match_total}s; "
+                      f"force-ending match to stop spend")
+            try:
+                end_url = args.referee_url.rstrip("/") + f"/api/matches/{match_id}/end"
+                req = urllib.request.Request(end_url, method="POST")
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    log.warning(f"[{cell.cell_label}] force-end response: {resp.status}")
+                # Give the referee a moment to write the JSONL after end_match
+                record = poll_match_jsonl(matches_dir, match_id, total_timeout_s=60)
+            except Exception as e:
+                log.error(f"[{cell.cell_label}] force-end failed: {e}")
+            if record is None:
+                state.cells_dnf += 1
+                continue
 
         if record.get("dnf"):
             state.cells_dnf += 1
