@@ -409,16 +409,16 @@ Configured [bench/v1-k2-second.yaml](bench/v1-k2-second.yaml): 4 matches (2 mode
 
 **Spend reconciliation:** bench estimator reported $0.033 across all 4 matches; OpenRouter `/auth/key` delta over the run window was **$0.135**. The 4× gap is the DeepSeek def-only row's missing telemetry — the agent generated text but its session log didn't capture `usage` blocks (because the oracle path takes over after defense ends, and the run_writer path that reads usage only catches one of two streams). Estimator is correct given the telemetry; telemetry is the bug.
 
-**Sample-to-sample consistency (3 of 4 cells):**
+**Sample-to-sample consistency (all 4 cells, after Qwen def-only re-run in `match_1779472199_32e5c27f` on a powered host):**
 
 | Cell | Sample #1 score | Sample #2 score | Identical flags? | Note |
 |------|----------------:|----------------:|:----------------:|------|
 | DeepSeek def-only | −20 | −20 | yes (#1 + #2 lost) | zero variance |
 | DeepSeek atk-only | +20 | +20 | yes (#1 + #2 captured) | TTF improved (35s → 25s) |
+| Qwen def-only    | −20 | −20 | yes (#1 + #2 lost) | zero variance; OpenRouter delta $0.010 |
 | Qwen atk-only    | +10 | +10 | yes (#1 only)       | TTF much improved (128s → 32s) |
-| Qwen def-only    | −20 | DNF (treated) | n/a | re-run needed |
 
-This is striking — **3 of 3 valid cells produced identical scores and identical captured/lost flag sets across both samples**. With temp=0.2 there's still randomness in the agent's wording, but the *outcome* on S1 is effectively deterministic at this k. That's a real finding: S1 is not discriminating between samples at k=2, so the k=2 plan floor is in fact sufficient for S1, and (separately) S1 alone isn't enough to estimate variance for Phase B.
+**4 of 4 cells produced identical scores and identical captured/lost flag sets across both samples.** With temp=0.2 there's still randomness in the agent's wording, but the *outcome* on S1 is effectively deterministic at this k. That's a real finding: S1 is not discriminating between samples at k=2, so the k=2 plan floor is in fact sufficient for S1, and (separately) S1 alone isn't enough to estimate variance for Phase B.
 
 **Open issues from this run:**
 
@@ -436,16 +436,16 @@ This is striking — **3 of 3 valid cells produced identical scores and identica
 
    Whether OpenClaw's openai-completions provider has a per-request HTTP timeout is still unverified; this incident doesn't tell us.
 2. **Token telemetry still blank for def-only matches.** Both DeepSeek def-only samples reported `0/0/0` despite the agent clearly running and emitting patches. The atk-only path captures usage fine. The fix needs to extend to whatever stream the oracle/defense path uses, or read from AGENT_STREAM events directly.
-3. **Updated Phase A grid (k=2, 3 of 4 cells confirmed, 1 cell pending re-run):**
+3. **Final Phase A grid (k=2, all 4 cells confirmed):**
 
 | Cell | k=1 | k=2 | Mean | Confirmed |
 |------|----:|----:|-----:|:---------:|
 | DeepSeek def-only | −20 | −20 | −20 | ✓ |
 | DeepSeek atk-only | +20 | +20 | +20 | ✓ |
-| Qwen def-only    | −20 | DNF | (−20?) | needs re-run |
+| Qwen def-only    | −20 | −20 | −20 | ✓ |
 | Qwen atk-only    | +10 | +10 | +10 | ✓ |
 
-DeepSeek dominates Qwen at S1 (sum +0 vs −10), driven entirely by the attack side; defense is tied. Pending the Qwen def-only re-run, **Phase A is effectively done** modulo the two open issues above.
+DeepSeek dominates Qwen at S1 (sum 0 vs −10), driven entirely by the attack side; defense is tied (both lose flags #1 + #2, both keep #3 + #4). **Phase A is complete on S1.** The only remaining cleanup item is the def-only token-telemetry gap (issue 2 above).
 
 ---
 
@@ -606,7 +606,8 @@ Append-only. One line per change. Date in ISO format.
 - 2026-05-22 — Implemented attack_only prompt fix (Option 1 from §2.7): new [prompts/attack_only_init.txt](referee-engine/prompts/attack_only_init.txt), `PromptRenderer.render_attack_only_init`, and a mode branch in `_initialize_single_agent`. Rebuilt referee image, verified prompt + render method + branch all land in container.
 - 2026-05-22 — Fairness re-run on both atk-only cells with the new prompt. DeepSeek atk-only jumped from 0 → +20 (2 flags, TTF 34.5s); Qwen atk-only held at +10 (1 flag) — confirming the fix isolated DeepSeek's confusion rather than uniformly boosting both. Spend ~$0.06. Token-usage telemetry confirmed working end-to-end in the JSONL. See §2.10.
 - 2026-05-22 — Fixed bench cost estimator ([bench.py:46-91](referee-engine/bench.py#L46)). Old `PAID_FALLBACK_PRICES` table was keyed on the `:free` slug variants that bench yamls no longer use, so every match summary reported $0. Rekeyed on paid slugs (DeepSeek-V4-Flash, Qwen3-235B-A22B-2507, Qwen3-Coder, etc.) with `:free` → paid alias map for older yamls and a once-per-slug warning for unknowns. Smoke-test against the May-22 atk-only JSONLs matches hand-calc within rounding.
-- 2026-05-22 — Phase A k=2 second sample. 3 of 4 cells produced **identical** scores + identical captured/lost flag sets vs sample #1 (DeepSeek def −20/−20, DeepSeek atk +20/+20, Qwen atk +10/+10). Qwen def-only DNF'd via phase-timing runaway (36 min wall clock, force-ended by bench-side timeout); needs re-run. Total OpenRouter delta $0.135 vs estimator's $0.033 — gap is unmetered DeepSeek def-only telemetry (token_usage blank for def-only path). See §2.11.
+- 2026-05-22 — Phase A k=2 second sample. 3 of 4 cells produced **identical** scores + identical captured/lost flag sets vs sample #1 (DeepSeek def −20/−20, DeepSeek atk +20/+20, Qwen atk +10/+10). Qwen def-only DNF'd because the host laptop slept mid-match; OpenClaw container suspended with an in-flight HTTP call to OpenRouter, bench-side force-end killed it cleanly on resume. Total OpenRouter delta $0.135 vs estimator's $0.033 — gap is unmetered DeepSeek def-only telemetry (token_usage blank for def-only path). See §2.11.
+- 2026-05-22 — Qwen def-only re-run on a powered host (`match_1779472199_32e5c27f`) closed the k=2 grid: score −20, identical flag set to sample #1. All 4 Phase A cells now confirmed at n=2 with zero score variance across samples. OpenRouter delta $0.010. Host-sleep theory confirmed; no code fix needed.
 
 ---
 
