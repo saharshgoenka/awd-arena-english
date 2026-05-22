@@ -1,7 +1,5 @@
 # Results — OpenClaw AWD Benchmark v1
 
-Owner: Saharsh
-PI: Peiran Wang
 Linked plan: [RESEARCH_PLAN.md](RESEARCH_PLAN.md)
 Started: 2026-05-19
 Last updated: 2026-05-19
@@ -126,7 +124,7 @@ Key signals:
   or (b) keep the cap and accept that most matches will DNF on input-token-budget.
   Needs decision before full Phase A.
 
-### 2.2 Proposed plan amendments (pending Peiran sign-off)
+### 2.2 Proposed plan amendments (pending collaborator sign-off)
 
 1. **Switch all Phase A/B/C/D runs to paid OpenRouter endpoints.** §4.4 worst-case
    spend estimate ($3.36) is unchanged; free-tier was projected at $0 but smoke
@@ -646,10 +644,10 @@ Record any scope cuts, k changes, scenario drops, model swaps, or budget realloc
 | 2026-05-19 | §6.2 R3 | attack_only mode introduces a non-agent "victim" PlayerConfig (`is_agent=False`) — a target container with flags but no claw container. The agent's `enemy_targets` then includes this victim. | The single-player attack flow would otherwise have no opponent target; the lone agent's flags would also collide with `own_flag` validation. | Saharsh |
 | 2026-05-19 | §6.2 R3 | defense_only mode uses a reserved attacker_id (`ORACLE_ATTACKER_ID = 999000`) for the reference-exploit sidecar instead of a separate "system" player. | Lets the oracle reuse the existing `/api/matches/{id}/submit` path; bypassing the own_flag check there is a one-line change vs. building a parallel submission endpoint. | Saharsh |
 | 2026-05-19 | §6.2 R2 | Token budget is observed at end-of-match (sums per-session `usage` blocks) rather than enforced as a mid-match kill switch. Match still marked DNF if either ceiling is exceeded. | Mid-match cancellation requires unwinding the agent backend's send-lock and is not safe to ship without exercise on real provider responses; deferred until Phase A confirms the JSON `usage` shape. | Saharsh |
-| 2026-05-20 | §4.3 models | Substituted `deepseek/deepseek-chat:free` → `deepseek/deepseek-v4-flash` and `qwen/qwen-2.5-coder-32b-instruct:free` → `qwen/qwen3-coder` (both PAID, not :free). | Original slugs 404 on OpenRouter as of 2026-05-19; `:free` variants of the substituted slugs hit 429 rate-limits mid-match (see §2.1). | Saharsh, pending Peiran |
-| 2026-05-20 | §4.2 windows | **PROPOSED**: shorten defense 15→5min, attack 25→10min. | 3+3min smoke matches showed agents producing full patches + exploit chains; 40min default was inherited from human-team AWD. Token budget is the real ceiling. | pending Peiran sign-off |
-| 2026-05-20 | §4.4 budget | **PROPOSED**: full Phase A/B/C/D run on paid endpoints (not free-tier). | `:free` shared rate-limit pool DNFs at ~5min wall clock; free-tier is not a viable path. | pending Peiran sign-off |
-| 2026-05-21 | §4.4 budget | **REVISED estimate**: per-match cost is **~$0.034 for a 3-min defense_only**, not ~$0.001 as smoke-2 first suggested. Real Phase A k=2 (8 matches × 5+5 min) projects to $0.50–0.80, full Phase B (72 matches) to $4–7. **The $5 cap may be insufficient for the original plan**; need to either drop k to 1, drop scenarios, or raise cap. | pending Peiran sign-off |
+| 2026-05-20 | §4.3 models | Substituted `deepseek/deepseek-chat:free` → `deepseek/deepseek-v4-flash` and `qwen/qwen-2.5-coder-32b-instruct:free` → `qwen/qwen3-coder` (both PAID, not :free). | Original slugs 404 on OpenRouter as of 2026-05-19; `:free` variants of the substituted slugs hit 429 rate-limits mid-match (see §2.1). | pending collaborator |
+| 2026-05-20 | §4.2 windows | **PROPOSED**: shorten defense 15→5min, attack 25→10min. | 3+3min smoke matches showed agents producing full patches + exploit chains; 40min default was inherited from human-team AWD. Token budget is the real ceiling. | pending collaborator sign-off |
+| 2026-05-20 | §4.4 budget | **PROPOSED**: full Phase A/B/C/D run on paid endpoints (not free-tier). | `:free` shared rate-limit pool DNFs at ~5min wall clock; free-tier is not a viable path. | pending collaborator sign-off |
+| 2026-05-21 | §4.4 budget | **REVISED estimate**: per-match cost is **~$0.034 for a 3-min defense_only**, not ~$0.001 as smoke-2 first suggested. Real Phase A k=2 (8 matches × 5+5 min) projects to $0.50–0.80, full Phase B (72 matches) to $4–7. **The $5 cap may be insufficient for the original plan**; need to either drop k to 1, drop scenarios, or raise cap. | pending collaborator sign-off |
 | 2026-05-21 | §6.2 R5 | Bench runner's `poll_match_jsonl` 900s timeout DNFs matches that are still running, then dispatches the next, causing resource overlap. Need to (a) raise the timeout, (b) replace polling with a referee status query, or (c) add a match-level hard kill so over-running matches can't drag for 100+ min. | Saharsh |
 | 2026-05-21 | §6.2 R4 | Token-usage data path broke when openclaw 2026.5.7+ changed its session-log schema. Real usage data now arrives via AGENT_STREAM events (`promptTokens`/`completionTokens` camelCase). `run_writer._token_usage` looks at the session JSONL file which no longer contains message records. Need to either (a) tap the AGENT_STREAM event stream, or (b) parse out the lastCallUsage block emitted to stdout during agent send. | Saharsh |
 | 2026-05-21 | §7 | Phase A stage 1 produced 0 usable cells: phase timing bug ran matches 4-22× over budget, 3 of 4 attacks produced 0 flag submissions, scores partially OK but harness fundamentally not ready for full Phase A. Re-run blocked. | Saharsh |

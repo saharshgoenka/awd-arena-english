@@ -93,7 +93,7 @@ Worst-case per-match cost on the cheapest paid OpenRouter endpoints (~$0.20/M in
 
 ### 4.3 Models
 
-**Hard budget: $5 total for all v1 experiments.** Per Peiran's 2026-05-12 guidance, use OpenRouter and rely on open-source models — we are researchers, not bloggers, and do not need frontier closed models to make the scientific point. Saharsh has already confirmed the free "ring 2.6" tier works (2026-05-12).
+**Hard budget: $5 total for all v1 experiments.** Per collaborator guidance (2026-05-12), use OpenRouter and rely on open-source models — we are researchers, not bloggers, and do not need frontier closed models to make the scientific point. The free "ring 2.6" tier was confirmed working (2026-05-12).
 
 Leaderboard tier — **free or near-free OpenRouter models only**. Run on all scenarios, all 3 modes:
 - DeepSeek V-series (free tier on OpenRouter where available; cheapest paid endpoint otherwise)
@@ -181,11 +181,11 @@ Track each as an issue in the project tracker.
 - [ ] **A3** `analysis/figures.py`: AWD-ELO chart, attack-vs-defense scatter (H1 test), cost-vs-capability Pareto. Output to `paper/figures/*.pdf`.
 - [ ] **A4** `analysis/stats.py`: bootstrap CIs, paired tests across model pairs on the same scenario seeds.
 
-Peiran's explicit feedback (2026-05-12): present progress as **tables + figures with descriptions**, not screenshots. The analysis pipeline is the artifact that satisfies this.
+Collaborator feedback (2026-05-12): present progress as **tables + figures with descriptions**, not screenshots. The analysis pipeline is the artifact that satisfies this.
 
 ### 6.4 Reproducibility & artifact
 - [ ] **P1** Pin all image digests in `bench/v1.lockfile`.
-- [ ] **P2** Public dataset card: scenarios + reference exploits + reference patches. Decide license with Peiran; reference exploits should ship under a research-use license, not MIT.
+- [ ] **P2** Public dataset card: scenarios + reference exploits + reference patches. License to be decided with the collaborator; reference exploits should ship under a research-use license, not MIT.
 - [ ] **P3** Anonymized release of agent transcripts (strip API keys before publish).
 
 ---
@@ -216,7 +216,7 @@ Every phase begins with a **pre-flight cost estimate** recorded in [results.md](
 - Prompt-scaffolding ablation: rerun top model on S1 + one hard scenario with the agent prompt stripped of vulnerability-class examples. k=2 × 2 scenarios × 2 modes = **8 matches**. Worst-case spend: ≤ $0.24.
 
 **Phase E — writeup (weeks 5–6)**
-- Draft, internal review with Peiran, archive submission per Peiran's preprint process (mentioned in the sync — Tian approves before arxiv post).
+- Draft, internal review with the collaborator, archive submission per the agreed preprint process (advisor approval required before arxiv post).
 
 **Total worst-case spend: $3.36.** Leaves ~$1.64 of safety margin under the $5 cap. Expected actual is well under $1 since the three leaderboard models all have free-tier endpoints. If any phase *overruns* the worst-case estimate (e.g. due to retries or unexpectedly long matches), the next phase is cut, not silently allowed to push past the cap.
 
@@ -253,13 +253,13 @@ Every phase begins with a **pre-flight cost estimate** recorded in [results.md](
 
 ### Deviations from this plan that need sign-off
 
-Made unilaterally during execution; recorded in [results.md §10](results.md#10-deviations-from-research_planmd) but called out here so Peiran can react before they get into a paper draft.
+Made unilaterally during execution; recorded in [results.md §10](results.md#10-deviations-from-research_planmd) but called out here so they can be reviewed before they get into a paper draft.
 
 | § | Deviation | Why | What it costs the paper if rejected |
 |---|-----------|-----|-------------------------------------|
 | §4.2 windows | Defense window shortened **15 min → 3 min**, attack window **25 min → 3 min** | Smoke runs at 3+3 already produced full diagnostic patches + exploit chains; 40-min matches would 13× spend with no observed quality lift. | Re-run everything at 5+5 (the original 15+25 is not financially viable). |
-| §4.3 models | Original slugs `deepseek/deepseek-chat:free` and `qwen/qwen-2.5-coder-32b-instruct:free` substituted with **`deepseek/deepseek-v4-flash`** (paid) and **`qwen/qwen3-235b-a22b-2507`** (paid). | Original slugs returned 404 on OpenRouter (2026-05-19); the `:free` variants of substituted slugs hit 429 rate-limits mid-match. | Phase A → re-run on whatever slugs are live + acceptable to Peiran. Llama-3.3-70B (3rd planned model) **not yet run**. |
-| §4.2 modes | New attacker-framing system prompt for `attack_only` mode (`prompts/attack_only_init.txt`). | Original prompt anchored agents as defenders; DeepSeek atk-only captured 0 flags by SSH-patching the victim instead of attacking. Fairness re-run on both atk-only cells. | Prompt change becomes a *research-design* question, not a *bug fix*. Worth a paragraph in methods either way; deciding whether to call this an ablation or a fix is a Peiran-call. |
+| §4.3 models | Original slugs `deepseek/deepseek-chat:free` and `qwen/qwen-2.5-coder-32b-instruct:free` substituted with **`deepseek/deepseek-v4-flash`** (paid) and **`qwen/qwen3-235b-a22b-2507`** (paid). | Original slugs returned 404 on OpenRouter (2026-05-19); the `:free` variants of substituted slugs hit 429 rate-limits mid-match. | Phase A → re-run on whatever slugs are live and acceptable. Llama-3.3-70B (3rd planned model) **not yet run**. |
+| §4.2 modes | New attacker-framing system prompt for `attack_only` mode (`prompts/attack_only_init.txt`). | Original prompt anchored agents as defenders; DeepSeek atk-only captured 0 flags by SSH-patching the victim instead of attacking. Fairness re-run on both atk-only cells. | Prompt change becomes a *research-design* question, not a *bug fix*. Worth a paragraph in methods either way; deciding whether to call this an ablation or a fix is a judgment call. |
 | §4.4 budget | $5 cap → de facto >$15 spend during execution (~$0.55 in-grid + ~$15 debugging). Real Phase B projection is **$5–15** at current prices. | Plan estimated $0.03/match for 40-min matches on free-tier; real cost is $0.01–0.30/match on paid endpoints, and free-tier 429s made paid unavoidable. | Need new cap, or scope cut (fewer scenarios, smaller k, drop a model). |
 | §7 phase A grid | 8 matches planned; 8 in-grid + several discarded "probe" / "smoke" / "old-prompt" matches actually ran. | All discards were either harness bugs caught during execution or prompt-confounded runs superseded by the §2.10 fairness re-run. None are in the reported k=2 grid. | None as long as we're transparent in methods. |
 
@@ -293,7 +293,7 @@ Recorded because they're material to interpreting any rerun and because the harn
 
 ### Next steps, in priority order
 
-1. **Peiran sync on the deviations above.** Especially the model-slug swap and the budget cap. Nothing else in Phase B is defensible without sign-off (or a counter-proposal).
+1. **Collaborator sync on the deviations above.** Especially the model-slug swap and the budget cap. Nothing else in Phase B is defensible without sign-off (or a counter-proposal).
 2. **Author S2–S6.** Biggest remaining engineering item, ~1–1.5 days/scenario per §6.1. No LLM spend. Each scenario needs: vulnerable target app + `oracle_exploit.py` + `oracle_patch.diff` + tests asserting unpatched→4/4 captured and patched→0/4 captured.
 3. **Fix `defense_only` token telemetry.** Currently def-only matches report `0/0/0` tokens; estimator undercounts spend ~100% on the defense side. Needed before Phase B for honest per-scenario cost.
 4. **(Optional) Add Llama-3.3-70B at Phase A scope on S1** (~$0.50, 4 matches) to round out the original 3-model plan before Phase B starts, OR defer to Phase B entirely.
@@ -309,7 +309,7 @@ Recorded because they're material to interpreting any rerun and because the harn
 - [x] Run artifacts under `referee-engine/runs/v1/` (jsonl + transcripts) — Phase A artifacts present (8 in-grid matches + probes); Phase B/C/D still to come.
 - [ ] `paper/tables/` and `paper/figures/` regenerable from `analysis/` — neither directory exists yet.
 - [ ] Draft paper PDF.
-- [ ] Anonymized arxiv submission (after Tian/Peiran approval).
+- [ ] Anonymized arxiv submission (after advisor approval).
 - [ ] Public repo release tag `v1.0-benchmark` with pinned image digests.
 
 ---
@@ -346,10 +346,10 @@ When resuming:
 
 1. Read this file (especially §7.5) and [results.md](results.md).
 2. The next action depends on whether the §7.5 "Next steps" items have moved:
-   - If the §7.5 deviations have not been reviewed with Peiran yet → that's the blocker for any Phase B work that would appear in a paper.
+   - If the §7.5 deviations have not been reviewed with the collaborator yet → that's the blocker for any Phase B work that would appear in a paper.
    - If `defense_only` token telemetry is still `0/0/0` → fix it; Phase B spend tracking depends on it.
    - If <6 scenarios exist → author the next missing one (§6.1 E1–E8).
-   - If all 6 scenarios pass `make verify` → run Phase B per §7 and append tables to [results.md](results.md) (no screenshots — per Peiran's 2026-05-12 feedback).
+   - If all 6 scenarios pass `make verify` → run Phase B per §7 and append tables to [results.md](results.md) (no screenshots — per collaborator feedback 2026-05-12).
    - If Phase B is complete → smoke-test the HVH code path on S1, then run Phase C.
 3. Update [results.md](results.md) with what changed, append a one-line entry to its §9 changelog, and refresh §7.5 here if the status shifts materially.
 4. Do not re-derive the plan from the transcript; if scope needs to change, edit this file and record the deviation in [results.md](results.md) §10.

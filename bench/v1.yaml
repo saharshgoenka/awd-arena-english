@@ -13,7 +13,7 @@
 #     user direction 2026-05-20 to save cost + wall clock. Smoke runs at 3+3
 #     already produced full diagnostic patches + exploit chains; 5+5 gives
 #     headroom without burning a full 40min per match. Recorded as a §10
-#     deviation pending Peiran sign-off.
+#     deviation pending collaborator sign-off.
 
 bench_run_id: v1-phaseA
 runs_dir: referee-engine/runs/v1
