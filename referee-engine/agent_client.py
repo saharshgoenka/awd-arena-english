@@ -120,7 +120,11 @@ class AgentClient:
     GATEWAY_STATE_READ_TIMEOUT = 15
     GATEWAY_MODEL_APPLY_TIMEOUT = 90
     GATEWAY_MODEL_POLL_INTERVAL = 2
-    INIT_PROMPT_TIMEOUT = 180
+    # Init can take longer on long-window matches: the agent runs the full
+    # review/plan/fix workflow as a single turn before responding. Observed
+    # 184.9s on a 15-min defense smoke (2026-05-23). 600s is generous but
+    # well under the match wall clock.
+    INIT_PROMPT_TIMEOUT = 600
     StreamCallback = Callable[[str], object]
 
     @staticmethod
