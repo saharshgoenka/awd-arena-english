@@ -381,7 +381,12 @@ class AgentClient:
         """
         Configure the OpenClaw container model provider.
 
-        Writes full config via docker cp, then verifies it.
+        Patches in the model/provider config via `openclaw config patch --stdin`
+        (which triggers a hot reload in the running gateway via OpenClaw's own
+        writeConfigFile listener). External `docker cp` would overwrite the file
+        but the running gateway never reads it back — see the inline comment in
+        the patch block for the full story.
+
         Important: `"api": "openai-completions"` is required or requests may fail.
         """
         bootstrap_wait = await self._wait_for_gateway_bootstrap(container_name)
@@ -450,30 +455,53 @@ class AgentClient:
 
         if self.llm_base_url and self.provider_name != "openai":
             new_config["models"]["providers"][self.provider_name]["baseUrl"] = self.llm_base_url
-        
-        config_json = json.dumps(new_config, indent=2)
-        
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write(config_json)
-            tmp_path = f.name
-        
+
+        # Patch only the `agents` and `models` sections via `openclaw config patch
+        # --stdin`. Reasons (verified 2026-05-22 on openclaw v2026.5.20):
+        #
+        # 1. The gateway has NO fs.watch on openclaw.json. External `docker cp`
+        #    overwrites the file but the running gateway keeps serving its
+        #    in-memory startup config (the bundled-default model, `openai/gpt-5.5`,
+        #    with no apiKey). First model call then 401s and the agent goes silent.
+        # 2. `openclaw config patch --stdin` goes through OpenClaw's own
+        #    writeConfigFile → registerConfigWriteListener path, which logs
+        #    `config change detected; evaluating reload` and applies a hot reload
+        #    of the `models` section without a gateway restart.
+        # 3. We pass only `agents` + `models` so we don't clobber the
+        #    `gateway.auth.token` (seeded by the Dockerfile, required by 2026.5.20+).
+        patch_payload = {
+            "agents": new_config["agents"],
+            "models": new_config["models"],
+        }
+        patch_json = json.dumps(patch_payload)
+
+        # `docker exec -i` pipes the JSON to stdin without writing a tmp file in
+        # the container; `--stdin` tells `openclaw config patch` to read from
+        # stdin. Recursive-merge semantics are fine because the seed config has
+        # only `gateway.*` (no stale providers to displace).
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "exec", "-i", container_name,
+            "sh", "-lc", "openclaw config patch --stdin",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
         try:
-            proc = await asyncio.create_subprocess_shell(
-                f"docker cp {tmp_path} {container_name}:{self.OPENCLAW_CONFIG_PATH}",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=patch_json.encode("utf-8")),
+                timeout=self.CONFIG_COPY_TIMEOUT,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.CONFIG_COPY_TIMEOUT)
-            if proc.returncode != 0:
-                logger.error(f"[{container_name}] docker cp failed: {stderr.decode()}")
-                return InitResult(False, "CONFIG_COPY_FAILED", stderr.decode("utf-8", errors="replace").strip() or "docker cp failed")
-        finally:
-            os.unlink(tmp_path)
-        
-        # docker cp creates files as root; OpenClaw runs as node
-        await self._exec_as_root(container_name, f"chown node:node {self.OPENCLAW_CONFIG_PATH}")
-        
+        except asyncio.TimeoutError:
+            proc.kill()
+            return InitResult(False, "CONFIG_PATCH_TIMEOUT", "openclaw config patch --stdin timed out")
+        if proc.returncode != 0:
+            err = (stderr.decode("utf-8", errors="replace").strip()
+                   or stdout.decode("utf-8", errors="replace").strip())
+            logger.error(f"[{container_name}] openclaw config patch failed (rc={proc.returncode}): {err[:400]}")
+            return InitResult(False, "CONFIG_PATCH_FAILED", err[:400] or "openclaw config patch failed")
+        if "Applied " in stdout.decode("utf-8", errors="replace"):
+            logger.info(f"[{container_name}] openclaw config patch accepted; awaiting hot reload")
+
         await asyncio.sleep(self.POST_CONFIG_APPLY_DELAY)
         
         verify = await self._exec(

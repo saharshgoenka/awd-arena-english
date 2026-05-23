@@ -1,18 +1,27 @@
 # OpenClaw upstream image + OpenSSH client for referee `target-ssh` probes and defense prompts.
 # Without `ssh`, init fails with TARGET_SSH_CLIENT_MISSING and the arena shows no agent stream.
-FROM alpine/openclaw:latest
+#
+# Pinned to alpine/openclaw:2026.5.20 (released 2026-05-21). Previously we tracked
+# :latest, which silently floated: matches in a single 2026-05-22 session ran
+# against v2026.5.7 *and* v2026.5.20 with subtly different config-handling
+# behavior, producing $0-spend def-only matches when the version flipped
+# mid-session. Pin prevents that drift; bump deliberately.
+FROM alpine/openclaw:2026.5.20
 USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssh-client \
     && rm -rf /var/lib/apt/lists/*
-# Newer alpine/openclaw revisions refuse to start without an explicit config and
-# crash-loop with "Missing config. Run `openclaw setup` or set gateway.mode=local
-# (or pass --allow-unconfigured)." The referee pushes the full provider/model
-# config via `docker cp` shortly after the container starts (see
-# agent_client.configure_container), but that needs the daemon alive in the
-# meantime. Seed a minimal `{ gateway: { mode: "local" } }` so the daemon boots;
-# the referee then overwrites this file in-place with the real config.
+# alpine/openclaw 2026.5.20+ refuses to bind the gateway without an auth token
+# ("Refusing to bind gateway to auto without auth"); earlier versions
+# auto-generated one. Also crash-loops without `gateway.mode` at all ("Missing
+# config. Run `openclaw setup` ..."). The referee patches in the full
+# provider/model config via `openclaw config patch --stdin` shortly after the
+# container starts (see agent_client.configure_container — which triggers a hot
+# reload through OpenClaw's writeConfigFile listener; external `docker cp` is
+# invisible to the running gateway). The seed `auth.token` placeholder is a
+# bootstrap value the referee overwrites; the gateway is on an isolated
+# per-match Docker network so it's never reachable externally.
 RUN mkdir -p /home/node/.openclaw \
-    && printf '{\n  "gateway": { "mode": "local" }\n}\n' > /home/node/.openclaw/openclaw.json \
+    && printf '{\n  "gateway": {\n    "mode": "local",\n    "auth": { "mode": "token", "token": "bootstrap-placeholder-replaced-by-referee" }\n  }\n}\n' > /home/node/.openclaw/openclaw.json \
     && chown -R node:node /home/node/.openclaw
 USER node
