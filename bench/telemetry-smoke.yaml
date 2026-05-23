@@ -1,0 +1,49 @@
+# Smoke-test for the OpenRouter-delta cost telemetry added 2026-05-22.
+# Single DeepSeek def-only match (the mode that historically reported $0).
+# Expected: measured_cost_usd > 0 in the bench summary, even though
+# estimated_cost_usd is still 0 (token data absent from trajectory schema).
+
+bench_run_id: telemetry-smoke-v1
+runs_dir: referee-engine/runs/v1
+budget_cap_usd: 0.30
+concurrency: 1
+
+defaults:
+  llm:
+    provider: openai-completions
+    baseUrl: https://openrouter.ai/api/v1
+    proxy: ""
+  match:
+    duration: 360
+    phases:
+      defense: 180
+      attack: 180
+  scoring:
+    attackSuccess: 10
+    defenseFailure: -10
+    slaViolation: -5
+  flags:
+    refreshInterval: 300
+    format: "FLAG{{{hash}}}"
+  token_budget_input: 400000
+  token_budget_output: 30000
+
+scenarios:
+  S1:
+    target_image: openclaw/ctf-target:v1
+    oracle_image: openclaw/oracle-s1:v1
+    flag_slot_count: 4
+
+models:
+  - id: deepseek_paid
+    openrouter_slug: deepseek/deepseek-v4-flash
+    label: DeepSeek-V4-Flash (paid)
+
+phases:
+  - name: smoke
+    description: One def-only match to validate measured_cost_usd in summary
+    grid:
+      models: [deepseek_paid]
+      scenarios: [S1]
+      modes: [defense_only]
+      k: 1

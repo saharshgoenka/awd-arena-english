@@ -64,7 +64,9 @@ PRICES = {
     # then swapped out for the cheaper 235B-A22B (results.md §2.6).
     "qwen/qwen3-coder":                {"in_per_mtok": 0.22,  "out_per_mtok": 1.80},
     "qwen/qwen-2.5-coder-32b-instruct":{"in_per_mtok": 0.18,  "out_per_mtok": 0.18},
-    "meta-llama/llama-3.3-70b-instruct":{"in_per_mtok": 0.25, "out_per_mtok": 0.65},
+    # Llama-3.3-70B-Instruct — paid OpenRouter pricing verified 2026-05-22.
+    # (Earlier $0.25 / $0.65 placeholder was a guess; real prices much lower.)
+    "meta-llama/llama-3.3-70b-instruct":{"in_per_mtok": 0.10, "out_per_mtok": 0.32},
 }
 
 # Older bench yamls may still pass :free slugs; resolve them to the paid entry.
@@ -88,10 +90,15 @@ class BenchCell:
     mode: str
     k_index: int
     k_total: int
+    # head_to_head only: the second agent in the match.
+    opponent_id: Optional[str] = None
+    opponent_slug: Optional[str] = None
+    opponent_label: Optional[str] = None
 
     @property
     def cell_label(self) -> str:
-        return f"{self.phase_name}/{self.model_id}/{self.scenario_id}/{self.mode}/k{self.k_index}"
+        suffix = f"vs{self.opponent_id}" if self.opponent_id else ""
+        return f"{self.phase_name}/{self.model_id}{suffix}/{self.scenario_id}/{self.mode}/k{self.k_index}"
 
 
 @dataclass
@@ -115,10 +122,17 @@ def enumerate_cells(cfg: Dict[str, Any]) -> List[BenchCell]:
     for phase in cfg.get("phases", []):
         grid = phase.get("grid", {})
         k_total = int(grid.get("k", 1))
+        modes = grid.get("modes", [])
+        scenarios = grid.get("scenarios", [])
+
+        # Solo-mode iteration (defense_only / attack_only): one cell per
+        # (model, scenario, mode, k). HVH iteration is below — `pairs:` field.
         for model_id in grid.get("models", []):
             m = models_by_id[model_id]
-            for scenario_id in grid.get("scenarios", []):
-                for mode in grid.get("modes", []):
+            for scenario_id in scenarios:
+                for mode in modes:
+                    if mode in ("head_to_head", "hvh"):
+                        continue  # HVH cells come from `pairs:`, not `models:`
                     for k_index in range(1, k_total + 1):
                         cells.append(BenchCell(
                             phase_name=phase["name"],
@@ -130,6 +144,31 @@ def enumerate_cells(cfg: Dict[str, Any]) -> List[BenchCell]:
                             k_index=k_index,
                             k_total=k_total,
                         ))
+
+        # HVH iteration: each pair `[model_a, model_b]` produces one cell per
+        # (scenario, k). Only fires when one of the modes is head_to_head/hvh.
+        if any(mode in ("head_to_head", "hvh") for mode in modes):
+            for pair in grid.get("pairs", []) or []:
+                a_id, b_id = pair["a"], pair["b"]
+                a, b = models_by_id[a_id], models_by_id[b_id]
+                for scenario_id in scenarios:
+                    for mode in modes:
+                        if mode not in ("head_to_head", "hvh"):
+                            continue
+                        for k_index in range(1, k_total + 1):
+                            cells.append(BenchCell(
+                                phase_name=phase["name"],
+                                model_id=a_id,
+                                openrouter_slug=a["openrouter_slug"],
+                                model_label=a["label"],
+                                scenario_id=scenario_id,
+                                mode=mode,
+                                k_index=k_index,
+                                k_total=k_total,
+                                opponent_id=b_id,
+                                opponent_slug=b["openrouter_slug"],
+                                opponent_label=b["label"],
+                            ))
     return cells
 
 
@@ -169,6 +208,32 @@ def build_match_config(
                 "name": "unpatched-victim",
                 "model": None,
                 "is_agent": False,
+            },
+        ]
+    elif cell.mode == "head_to_head" or cell.mode == "hvh":
+        # HVH cells specify a pair via `hvh.opponent_slug` / `hvh.opponent_label`
+        # in the yaml's phase-grid (so the bench grid can enumerate pairs without
+        # the model-set field exploding combinatorially). The cell's primary
+        # model is player 1, the opponent is player 2.
+        opp_slug = getattr(cell, "opponent_slug", None)
+        opp_label = getattr(cell, "opponent_label", None) or "opponent"
+        if not opp_slug:
+            raise ValueError(
+                f"head_to_head cell {cell.cell_label} missing opponent_slug; "
+                f"add `opponent: {{slug, label}}` under the phase grid."
+            )
+        players = [
+            {
+                "id": 1,
+                "name": cell.model_label,
+                "model": cell.openrouter_slug,
+                "is_agent": True,
+            },
+            {
+                "id": 2,
+                "name": opp_label,
+                "model": opp_slug,
+                "is_agent": True,
             },
         ]
     else:
@@ -231,6 +296,28 @@ def poll_match_jsonl(matches_dir: Path, match_id: str, total_timeout_s: int) -> 
 _unpriced_slugs_warned: set = set()
 
 
+def fetch_openrouter_total_usage(api_key: str) -> Optional[float]:
+    """Return the OpenRouter account's cumulative spend in USD.
+
+    Used to bracket each match with a before/after delta — gives us the exact
+    spend per match even when OpenClaw's session log omits usage data (which
+    it does for defense_only matches, where the trajectory schema carries no
+    token counts). Returns None on any HTTP / parse failure so the caller can
+    fall back to the token-based estimate.
+    """
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/credits",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        return float((payload.get("data") or {}).get("total_usage"))
+    except Exception as exc:
+        log.warning(f"fetch_openrouter_total_usage failed: {exc}")
+        return None
+
+
 def estimate_match_cost(record: Dict[str, Any], openrouter_slug: str) -> float:
     """Convert token_usage into $ using the PRICES table.
 
@@ -288,6 +375,12 @@ def run(args: argparse.Namespace) -> int:
             state.cells_dispatched += 1
             continue
 
+        # Snapshot OpenRouter cumulative spend right before dispatch so we can
+        # back-compute exact per-match spend regardless of whether the session
+        # log carries usage data. defense_only matches in particular need this
+        # because OpenClaw's trajectory schema omits token counts entirely.
+        spend_before = fetch_openrouter_total_usage(api_key)
+
         try:
             match_id = post_match(args.referee_url, body, referee_api_key)
         except urllib.error.HTTPError as e:
@@ -333,15 +426,39 @@ def run(args: argparse.Namespace) -> int:
         else:
             state.cells_completed += 1
 
-        cost = estimate_match_cost(record, cell.openrouter_slug)
+        # Token-based estimate (works for atk-only / HVH; reports $0 for def-only
+        # because OpenClaw's trajectory schema omits usage data).
+        cost_est = estimate_match_cost(record, cell.openrouter_slug)
+
+        # OpenRouter-measured spend delta (works for every mode, captures oracle
+        # path costs too). Wait a beat so OpenRouter has flushed billing for any
+        # in-flight requests this match made.
+        time.sleep(3)
+        spend_after = fetch_openrouter_total_usage(api_key)
+        if spend_before is not None and spend_after is not None:
+            cost_measured = max(0.0, spend_after - spend_before)
+        else:
+            cost_measured = None
+
+        # Prefer the measured delta when available; fall back to the token-based
+        # estimate so the cumulative-spend gate still works if OpenRouter's API
+        # is briefly unreachable.
+        cost = cost_measured if cost_measured is not None else cost_est
         state.estimated_spend_usd += cost
         state.per_match_records.append({
             "cell": cell.cell_label,
             "match_id": match_id,
             "dnf": record.get("dnf"),
-            "estimated_cost_usd": round(cost, 5),
+            "estimated_cost_usd": round(cost_est, 5),
+            "measured_cost_usd": round(cost_measured, 5) if cost_measured is not None else None,
         })
-        log.info(f"[{cell.cell_label}] done; est cost ${cost:.5f}; cumulative ${state.estimated_spend_usd:.4f}")
+        if cost_measured is not None:
+            log.info(
+                f"[{cell.cell_label}] done; measured ${cost_measured:.5f} "
+                f"(est ${cost_est:.5f}); cumulative ${state.estimated_spend_usd:.4f}"
+            )
+        else:
+            log.info(f"[{cell.cell_label}] done; est cost ${cost_est:.5f}; cumulative ${state.estimated_spend_usd:.4f}")
 
     summary_path = runs_dir / f"bench_summary_{cfg.get('bench_run_id', 'run')}.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)

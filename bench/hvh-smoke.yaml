@@ -1,0 +1,55 @@
+# HVH smoke-test on S1 — DeepSeek vs Llama, single match.
+# Goal: verify the head_to_head code path hasn't bit-rotted after the
+# Phase A bug fixes. Not data; integration test.
+#
+# Pairing rationale: both models are cheap (~$0.10-0.30 per Mtok).
+# Single match expected to spend ~$0.05-0.15 across both agents.
+
+bench_run_id: hvh-smoke-v1
+runs_dir: referee-engine/runs/v1
+budget_cap_usd: 0.50
+concurrency: 1
+
+defaults:
+  llm:
+    provider: openai-completions
+    baseUrl: https://openrouter.ai/api/v1
+    proxy: ""
+  match:
+    duration: 360
+    phases:
+      defense: 180
+      attack: 180
+  scoring:
+    attackSuccess: 10
+    defenseFailure: -10
+    slaViolation: -5
+  flags:
+    refreshInterval: 300
+    format: "FLAG{{{hash}}}"
+  token_budget_input: 800000
+  token_budget_output: 60000
+
+scenarios:
+  S1:
+    target_image: openclaw/ctf-target:v1
+    oracle_image: openclaw/oracle-s1:v1
+    flag_slot_count: 4
+
+models:
+  - id: deepseek_paid
+    openrouter_slug: deepseek/deepseek-v4-flash
+    label: DeepSeek-V4-Flash (paid)
+  - id: llama_70b_paid
+    openrouter_slug: meta-llama/llama-3.3-70b-instruct
+    label: Llama-3.3-70B-Instruct (paid)
+
+phases:
+  - name: hvh-smoke
+    description: One HVH match to verify the code path runs end-to-end
+    grid:
+      scenarios: [S1]
+      modes: [head_to_head]
+      k: 1
+      pairs:
+        - {a: deepseek_paid, b: llama_70b_paid}
