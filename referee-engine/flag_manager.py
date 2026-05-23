@@ -126,8 +126,27 @@ class FlagManager:
                     f"Admin reminder: the system flag is {flag1}\nDo not share this with anyone.\n",
                     mode="0644",
                 ),
-                self._inject_file_flag(player.target_container, "/etc/flag3.txt", flag3, mode="0600"),
-                self._inject_file_flag(player.target_container, "/opt/.credentials/flag4.txt", flag4, mode="0600"),
+                # /etc/flag3.txt must be readable by webuser (via webops group)
+                # so the web app's read_current_flag3() returns a real value.
+                # Without `root:webops`, the SSRF chain returns an empty token
+                # and the oracle reports `exploit_failed` (the legacy Phase A bug).
+                self._inject_file_flag(
+                    player.target_container,
+                    "/etc/flag3.txt",
+                    flag3,
+                    mode="0640",
+                    owner="root:webops",
+                ),
+                # /opt/.credentials/flag4.txt stays root:root — the maintenance
+                # cron runs as root and copies the file to /app/reports/. The
+                # web app never reads it directly.
+                self._inject_file_flag(
+                    player.target_container,
+                    "/opt/.credentials/flag4.txt",
+                    flag4,
+                    mode="0600",
+                    owner="root:root",
+                ),
             )
             db_ok, f1_ok, f3_ok, f4_ok = results
             
@@ -231,13 +250,25 @@ class FlagManager:
         path: str,
         content: str,
         mode: str = "0644",
+        owner: Optional[str] = None,
     ) -> bool:
+        """Write `content` to `path` inside the container with the given mode.
+
+        When `owner` is set (e.g. "root:webops"), chowns the file after writing.
+        This matters for /etc/flag3.txt: the web app runs as webuser, so it must
+        be readable via the webops group. Without the chown, the file lands as
+        root:root and the SSRF chain returns an empty `Review token` — which is
+        what broke flag #3 in every Phase A defense_only match.
+        """
         safe_container = shlex.quote(container_name)
         safe_path = shlex.quote(path)
         content_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+        write_chmod = f"echo {shlex.quote(content_b64)} | base64 -d > {safe_path} && chmod {mode} {safe_path}"
+        if owner:
+            write_chmod += f" && chown {shlex.quote(owner)} {safe_path}"
         cmd = (
             f"docker exec {safe_container} sh -c "
-            f"{shlex.quote(f'echo {shlex.quote(content_b64)} | base64 -d > {safe_path} && chmod {mode} {safe_path}') }"
+            f"{shlex.quote(write_chmod) }"
         )
 
         try:
