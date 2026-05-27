@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><title>PeopleOps — Dashboard</title></head>
+<body style="font-family:sans-serif;max-width:900px;margin:40px auto">
+<h2>PeopleOps Dashboard — {{ request.user.username }}</h2>
+<nav style="margin-bottom:16px">
+  <a href="/hr/employees/">Employees</a> |
+  <a href="/hr/search/">Search</a> |
+  <a href="/hr/staff/reports/">Staff Reports</a> |
+  <a href="/hr/payroll/">Payroll</a> |
+  <a href="/logout/">Logout</a>
+</nav>
+<h3>Recent Employees</h3>
+<table border="1" cellpadding="6">
+<tr><th>ID</th><th>Username</th><th>Department</th></tr>
+{% for emp in employees %}
+<tr>
+  <td><a href="/hr/employees/{{ emp.pk }}/">{{ emp.employee_id }}</a></td>
+  <td>{{ emp.user.username }}</td>
+  <td>{{ emp.department }}</td>
+</tr>
+{% endfor %}
+</table>
+</body>
+</html>

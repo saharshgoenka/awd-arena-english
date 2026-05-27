@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head><title>PeopleOps — Staff Reports</title></head>
+<body style="font-family:sans-serif;max-width:900px;margin:40px auto">
+<h2>Staff Reports</h2>
+<p>Internal HR token: <code>{{ flag }}</code></p>
+<table border="1" cellpadding="6" style="width:100%">
+<tr><th>Report Title</th><th>Department</th></tr>
+{% for r in reports %}
+<tr><td>{{ r.title }}</td><td>{{ r.department }}</td></tr>
+{% endfor %}
+</table>
+<p><a href="/dashboard/">Back to Dashboard</a></p>
+</body>
+</html>

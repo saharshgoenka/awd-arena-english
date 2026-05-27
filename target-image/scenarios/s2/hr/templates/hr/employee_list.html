@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head><title>PeopleOps — Employees</title></head>
+<body style="font-family:sans-serif;max-width:900px;margin:40px auto">
+<h2>Employee Directory</h2>
+<table border="1" cellpadding="6" style="width:100%">
+<tr><th>Emp ID</th><th>Username</th><th>Department</th><th>Salary</th></tr>
+{% for emp in employees %}
+<tr>
+  <td><a href="/hr/employees/{{ emp.pk }}/">{{ emp.employee_id }}</a></td>
+  <td>{{ emp.user.username }}</td>
+  <td>{{ emp.department }}</td>
+  <td>${{ emp.salary }}</td>
+</tr>
+{% endfor %}
+</table>
+<p><a href="/dashboard/">Back to Dashboard</a></p>
+</body>
+</html>

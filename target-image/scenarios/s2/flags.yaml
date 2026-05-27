@@ -1,0 +1,26 @@
+flags:
+  - id: flag_1
+    env: FLAG_1
+    owasp: A01
+    category: broken_access_control
+    hint: "Role checks are not the same as login checks."
+  - id: flag_2
+    env: FLAG_2
+    owasp: A02
+    category: security_misconfiguration
+    hint: "DEBUG=True and custom debug routes do not belong in production."
+  - id: flag_3
+    env: FLAG_3
+    owasp: A04
+    category: cryptographic_failures
+    hint: "Django has a legacy MD5 hasher. Legacy is the key word."
+  - id: flag_4
+    env: FLAG_4
+    owasp: A05
+    category: injection
+    hint: "Django ORM .raw() with f-strings is not safer than raw SQL."
+  - id: flag_5
+    env: FLAG_5
+    owasp: A07
+    category: authentication_failures
+    hint: "No lockout + enumerable usernames = trivial brute force."

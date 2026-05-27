@@ -1,0 +1,159 @@
+# S3/Express TaskFlow - patches all 5 flag paths
+#
+# Applied from the scenario directory:
+#   patch -p1 < oracle_patch.diff
+#
+# Patches:
+#   flag_1 (A01) - add requireAuth + requireRole('admin') to /api/admin/config
+#   flag_2 (A02) - remove /api/debug route from app.js; fix static dir to /app/public/
+#   flag_3 (A04) - switch seeded/login hashes to SHA-256, rotate weak passwords, remove password_hash from /api/users/me
+#   flag_4 (A05) - parameterize the search query in /api/tasks/search
+#   flag_5 (A07) - reject alg:none JWTs and use a stronger JWT secret
+
+--- a/routes/admin.js
++++ b/routes/admin.js
+@@ -4,8 +4,7 @@
+ const db = require('../db');
+ const { requireAuth, requireRole } = require('../middleware/auth');
+ 
+-// flag_1: no auth middleware on /config — any unauthenticated request can read it
+-router.get('/config', (req, res) => {
++router.get('/config', requireAuth, requireRole('admin'), (req, res) => {
+   const flag = db.prepare("SELECT value FROM flags WHERE name = 'flag_1'").get();
+   res.json({
+     config: {
+--- a/app.js
++++ b/app.js
+@@ -18,15 +18,11 @@
+ app.use(express.urlencoded({ extended: false }));
+ app.use(cookieParser());
+ 
+-// flag_2: static misconfiguration — serves entire /app/ directory instead of /app/public/
+-// This exposes .env, app.js, db.js, etc. via HTTP.  Patch changes __dirname to path.join(__dirname, 'public')
+-app.use(express.static(__dirname));
++app.use(express.static(path.join(__dirname, 'public')));
+ 
+ // Routes
+ app.use('/auth', require('./routes/auth'));
+ app.use('/api/admin', require('./routes/admin'));
+-// flag_2: debug routes mounted — remove this line in patch
+-app.use('/api/debug', require('./routes/debug'));
+ app.use('/api/tasks', require('./routes/tasks'));
+ app.use('/api/users', require('./routes/users'));
+ app.use('/api/projects', require('./routes/projects'));
+--- a/db.js
++++ b/db.js
+@@ -4,8 +4,8 @@
+ const fs = require('fs');
+ const path = require('path');
+ 
+-function md5(text) {
+-  return crypto.createHash('md5').update(text).digest('hex');
++function hashPassword(text) {
++  return crypto.createHash('sha256').update(text).digest('hex');
+ }
+ 
+ const DATA_DIR = '/app/data';
+@@ -38,11 +38,14 @@
+ 
+ // Seed users
+ const insertUser = db.prepare(
+-  'INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)'
++  `INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)
++   ON CONFLICT(username) DO UPDATE SET
++     password_hash = excluded.password_hash,
++     role = excluded.role`
+ );
+-insertUser.run('admin', md5('taskadmin99'), 'admin');
+-insertUser.run('devuser', md5('password123'), 'user');
+-insertUser.run('manager', md5('manager456'), 'manager');
++insertUser.run('admin', hashPassword('N9rT4vK2mQ8xLp6S'), 'admin');
++insertUser.run('devuser', hashPassword('D7pL3wZ9cM2qVa5R'), 'user');
++insertUser.run('manager', hashPassword('manager456'), 'manager');
+ 
+ // Seed tasks
+ const insertTask = db.prepare(
+--- a/routes/auth.js
++++ b/routes/auth.js
+@@ -6,8 +6,8 @@
+ const db = require('../db');
+ const { JWT_SECRET } = require('../middleware/auth');
+ 
+-function md5(text) {
+-  return crypto.createHash('md5').update(text).digest('hex');
++function hashPassword(text) {
++  return crypto.createHash('sha256').update(text).digest('hex');
+ }
+ 
+ // POST /auth/login
+@@ -17,7 +17,7 @@
+     return res.status(400).json({ error: 'Username and password required' });
+   }
+   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+-  if (!user || user.password_hash !== md5(password)) {
++  if (!user || user.password_hash !== hashPassword(password)) {
+     return res.status(401).json({ error: 'Invalid credentials' });
+   }
+   const token = jwt.sign(
+--- a/routes/users.js
++++ b/routes/users.js
+@@ -4,11 +4,11 @@
+ const db = require('../db');
+ const { requireAuth } = require('../middleware/auth');
+ 
+-// GET /api/users/me — flag_3: returns full user object including password_hash
+ router.get('/me', requireAuth, (req, res) => {
+   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.userId);
+   if (!user) return res.status(404).json({ error: 'User not found' });
+-  res.json(user);
++  const { password_hash, ...safeUser } = user;
++  res.json(safeUser);
+ });
+ 
+ // GET /api/users/secret — flag_3 target: devuser-only endpoint
+--- a/routes/tasks.js
++++ b/routes/tasks.js
+@@ -4,15 +4,11 @@
+ const db = require('../db');
+ const { requireAuth } = require('../middleware/auth');
+ 
+-// flag_4: SQL injection via template literal in search query
+-// Must be registered before /:id to avoid being swallowed by the param route
+ router.get('/search', requireAuth, (req, res) => {
+   const q = req.query.q || '';
+   const results = db
+-    .prepare(
+-      `SELECT id, title, description FROM tasks WHERE title LIKE '%${q}%'`
+-    )
+-    .all();
++    .prepare('SELECT id, title, description FROM tasks WHERE title LIKE ?')
++    .all(`%${q}%`);
+   res.json({ results });
+ });
+ 
+--- a/middleware/auth.js
++++ b/middleware/auth.js
+@@ -2,7 +2,7 @@
+ const jwt = require('jsonwebtoken');
+ 
+ // flag_5 — weak secret; also used in jwt.verify below
+-const JWT_SECRET = 'supersecret';
++const JWT_SECRET = 'Z7qR2mLp9vKx4NwT6cY8sDf3GhJ5bAa1';
+ 
+ function requireAuth(req, res, next) {
+   const cookieToken = req.cookies && req.cookies.token;
+@@ -15,14 +15,6 @@
+     return res.status(401).json({ error: 'Authentication required' });
+   }
+   try {
+-    // flag_5 vulnerability: explicitly accepts alg:none tokens without signature verification
+-    const rawHeader = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString());
+-    if (rawHeader.alg === 'none') {
+-      const decoded = jwt.decode(token);
+-      if (!decoded) throw new Error('decode failed');
+-      req.user = decoded;
+-      return next();
+-    }
+     const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+     req.user = decoded;
+     next();

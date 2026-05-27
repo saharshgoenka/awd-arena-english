@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><title>PeopleOps — {{ employee.user.username }}</title></head>
+<body style="font-family:sans-serif;max-width:700px;margin:40px auto">
+<h2>Employee: {{ employee.user.username }}</h2>
+<table border="1" cellpadding="6">
+<tr><th>Field</th><th>Value</th></tr>
+<tr><td>Employee ID</td><td>{{ employee.employee_id }}</td></tr>
+<tr><td>Department</td><td>{{ employee.department }}</td></tr>
+<tr><td>Salary</td><td>${{ employee.salary }}</td></tr>
+<tr><td>Staff</td><td>{{ employee.user.is_staff }}</td></tr>
+<tr><td>Legacy auth token</td><td><code>{{ employee.user.password }}</code></td></tr>
+</table>
+<p><a href="/hr/employees/">Back to Employees</a></p>
+</body>
+</html>
