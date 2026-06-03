@@ -1,0 +1,26 @@
+flags:
+  - id: flag_1
+    env: FLAG_1
+    owasp: A01
+    category: broken_access_control
+    hint: "An admin handler registered on the bare router runs no auth middleware. Move it behind the authenticated group and check the role."
+  - id: flag_2
+    env: FLAG_2
+    owasp: A02
+    category: security_misconfiguration
+    hint: "expvar's /debug/vars handler dumps published vars (here, the whole environment). It belongs in development only."
+  - id: flag_3
+    env: FLAG_3
+    owasp: A04
+    category: cryptographic_failures
+    hint: "A column named password_hash implies bcrypt. crypto/md5 is not bcrypt, and the digest is exposed via /profile/token."
+  - id: flag_4
+    env: FLAG_4
+    owasp: A05
+    category: injection
+    hint: "String concatenation into db.Query is SQLi. Use a bound ? placeholder."
+  - id: flag_5
+    env: FLAG_5
+    owasp: A07
+    category: authentication_failures
+    hint: "A JWT HMAC secret hardcoded to a guessable value is brute-forceable; an attacker can forge an admin token. Use a high-entropy secret."
