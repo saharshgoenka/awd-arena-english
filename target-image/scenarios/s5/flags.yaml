@@ -1,0 +1,26 @@
+flags:
+  - id: flag_1
+    env: FLAG_1
+    owasp: A01
+    category: broken_access_control
+    hint: "Admin API endpoints need the same authorization checks as other protected routes."
+  - id: flag_2
+    env: FLAG_2
+    owasp: A02
+    category: security_misconfiguration
+    hint: "Spring Actuator /env exposes all environment variables when show-values is ALWAYS."
+  - id: flag_3
+    env: FLAG_3
+    owasp: A04
+    category: cryptographic_failures
+    hint: "MD5 password hashes are trivially crackable; common passwords are rainbow-table lookups."
+  - id: flag_4
+    env: FLAG_4
+    owasp: A05
+    category: injection
+    hint: "JdbcTemplate string concatenation is SQL injection — parameterized queries fix it."
+  - id: flag_5
+    env: FLAG_5
+    owasp: A07
+    category: authentication_failures
+    hint: "HTTP Basic with no rate limiting or lockout is brute-forceable with a wordlist."

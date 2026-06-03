@@ -1,0 +1,153 @@
+# S4/Laravel ShopAdmin — patches all 5 flag paths
+#
+# Applied from the scenario directory:
+#   patch -p1 < oracle_patch.diff
+#
+# Patches:
+#   flag_1 (A01) — add auth + role:admin middleware to /admin/panel route
+#   flag_2 (A02) — remove /debug/phpinfo route; stop exposing public .env
+#   flag_3 (A04) — rotate analyst password in seeder; remove legacy-token route
+#   flag_4 (A05) — parameterize product search query
+#   flag_5 (A07) — add throttle to POST /login; unify error messages; rotate admin password
+
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -2,7 +2,6 @@
+ 
+ use App\Http\Controllers\AdminController;
+ use App\Http\Controllers\AuthController;
+-use App\Http\Controllers\DebugController;
+ use App\Http\Controllers\ProductController;
+ use Illuminate\Support\Facades\Route;
+ 
+@@ -11,20 +10,17 @@
+ 
+ // Auth
+ Route::get('/login',  [AuthController::class, 'showLogin'])->name('login');
+-Route::post('/login', [AuthController::class, 'login']);
++Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+ Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth');
+ 
+ // Dashboard
+ Route::get('/dashboard', [AuthController::class, 'dashboard'])->middleware('auth');
+ 
+-// flag_1: admin panel — intentionally missing auth + role middleware
+-Route::get('/admin/panel', [AdminController::class, 'panel']);
++Route::get('/admin/panel', [AdminController::class, 'panel'])->middleware(['auth', 'role:admin']);
+ 
+-// flag_2: debug endpoint — no auth; FLAG_2 in JSON dump
+-Route::get('/debug/phpinfo', [DebugController::class, 'phpinfo']);
++// debug endpoint disabled
+ 
+-// flag_3 path: legacy MD5 token exposed
+-Route::get('/profile/legacy-token', [AuthController::class, 'legacyToken'])->middleware('auth');
++// legacy token endpoint removed
+ 
+ // Products
+ Route::middleware('auth')->group(function () {
+--- a/app/Http/Controllers/DebugController.php
++++ b/app/Http/Controllers/DebugController.php
+@@ -4,13 +4,8 @@
+ 
+ class DebugController extends Controller
+ {
+-    // flag_2: unauthenticated env dump — FLAG_2 is in the process environment
+     public function phpinfo()
+     {
+-        $env = getenv() ?: [];
+-        return response()->json([
+-            'env'    => $env,
+-            'config' => ['app_env' => config('app.env'), 'app_debug' => config('app.debug')],
+-        ]);
++        abort(404);
+     }
+ }
+--- a/app/Http/Controllers/AuthController.php
++++ b/app/Http/Controllers/AuthController.php
+@@ -18,14 +18,8 @@
+         $username = $request->input('username', '');
+         $password = $request->input('password', '');
+ 
+-        // flag_5 vulnerability: separate lookup reveals whether username exists
+-        $user = User::where('username', $username)->first();
+-        if (!$user) {
+-            return back()->withErrors(['login' => 'User not found']);
+-        }
+-
+         if (!Auth::attempt(['username' => $username, 'password' => $password], false)) {
+-            return back()->withErrors(['login' => 'Invalid password']);
++            return back()->withErrors(['login' => 'Invalid credentials']);
+         }
+ 
+         $request->session()->regenerate();
+--- a/app/Http/Controllers/ProductController.php
++++ b/app/Http/Controllers/ProductController.php
+@@ -14,11 +14,10 @@
+         return response()->json(['products' => $products]);
+     }
+ 
+-    // flag_4: raw SQL with string interpolation
+     public function search(Request $request)
+     {
+         $q = $request->input('q', '');
+-        $results = DB::select("SELECT id, name, description FROM products WHERE name LIKE '%{$q}%'");
++        $results = DB::select('SELECT id, name, description FROM products WHERE name LIKE ?', ["%{$q}%"]);
+         return response()->json(['results' => $results]);
+     }
+ 
+--- a/database/seeders/DatabaseSeeder.php
++++ b/database/seeders/DatabaseSeeder.php
+@@ -27,16 +27,16 @@
+                 'name'            => 'Admin',
+                 'username'        => 'admin',
+                 'email'           => 'admin@shopadmin.local',
+-                'password'        => Hash::make('shopadmin2024'),
+-                'password_legacy' => md5('shopadmin2024'),
++                'password'        => Hash::make('N8rK3vP7mQ5xLw2T'),
++                'password_legacy' => '',
+                 'role'            => 'admin',
+             ],
+             [
+                 'name'            => 'Analyst',
+                 'username'        => 'analyst',
+                 'email'           => 'analyst@shopadmin.local',
+-                'password'        => Hash::make('password123'),
+-                'password_legacy' => md5('password123'),
++                'password'        => Hash::make('D4pZ9wM6cV3qBa8R'),
++                'password_legacy' => '',
+                 'role'            => 'user',
+             ],
+             [
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -39,8 +39,7 @@
+     chmod -R 777 /app/storage /app/bootstrap/cache && \
+     chmod +x /app/artisan /app/start.sh && \
+     php artisan key:generate --force
+ 
+-# Copy .env to public/ for the static misconfiguration (flag_2 path B)
+-RUN cp /app/.env /app/public/.env
++RUN rm -f /app/public/.env
+ 
+ COPY supervisord.conf /etc/supervisor/supervisord.conf
+ 
+--- a/.env
++++ b/.env
+@@ -4 +4 @@
+-APP_DEBUG=true
++APP_DEBUG=false
+ 
+ LOG_CHANNEL=stderr
+--- a/start.sh
++++ b/start.sh
+@@ -10,8 +10,8 @@
+     fi
+ done
+ 
+-# Copy .env to public/ — flag_2 path B: GET /.env exposes FLAG_2
+-cp /app/.env /app/public/.env
++# Keep Laravel's environment file outside the public document root.
++rm -f /app/public/.env
+ 
+ mkdir -p /app/data \
+          /app/storage/framework/sessions \

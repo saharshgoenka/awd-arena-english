@@ -1,0 +1,26 @@
+flags:
+  - id: flag_1
+    env: FLAG_1
+    owasp: A01
+    category: broken_access_control
+    hint: "Laravel routes without middleware are public by default."
+  - id: flag_2
+    env: FLAG_2
+    owasp: A02
+    category: security_misconfiguration
+    hint: "The .env file and debug controllers should never be web-accessible."
+  - id: flag_3
+    env: FLAG_3
+    owasp: A04
+    category: cryptographic_failures
+    hint: "A legacy_token column storing MD5 hashes is a liability."
+  - id: flag_4
+    env: FLAG_4
+    owasp: A05
+    category: injection
+    hint: "DB::select() with string interpolation is raw SQL with extra steps."
+  - id: flag_5
+    env: FLAG_5
+    owasp: A07
+    category: authentication_failures
+    hint: "No throttle middleware + distinguishable error messages = enumeration + brute force."
