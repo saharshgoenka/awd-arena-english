@@ -1,0 +1,26 @@
+flags:
+  - id: flag_1
+    env: FLAG_1
+    owasp: A01
+    category: broken_access_control
+    hint: "Admin endpoints must check the user's role, not just that they are logged in."
+  - id: flag_2
+    env: FLAG_2
+    owasp: A02
+    category: security_misconfiguration
+    hint: "A /debug/env endpoint dumping the process environment belongs in development only."
+  - id: flag_3
+    env: FLAG_3
+    owasp: A04
+    category: cryptographic_failures
+    hint: "A column named password_hash implies bcrypt. A fast SHA-256 digest is not bcrypt."
+  - id: flag_4
+    env: FLAG_4
+    owasp: A05
+    category: injection
+    hint: "String concatenation into a SQL query is SQLi. Use a bound ? placeholder."
+  - id: flag_5
+    env: FLAG_5
+    owasp: A07
+    category: authentication_failures
+    hint: "Without rate limiting, and with user-enumerating error messages, login is brute-forceable."

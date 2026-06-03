@@ -1,0 +1,146 @@
+# S7/Go FleetView - patches all 5 flag paths
+#
+# Applied from /app inside the container:
+#   patch -p1 < oracle_patch.diff
+# Then restart (start.sh recompiles the patched source):
+#   supervisorctl restart app
+#
+# Patches:
+#   flag_1 (A01) - require admin role in adminSettingsHandler
+#   flag_2 (A02) - remove the /debug/env route
+#   flag_3 (A04) - bcrypt instead of SHA-256; stop exposing the hash; rotate passwords
+#   flag_4 (A05) - bind the search term with a ? placeholder
+#   flag_5 (A07) - rate limit logins and unify the error message
+--- a/crypto.go
++++ b/crypto.go
+@@ -1,18 +1,17 @@
+ package main
+ 
+-import (
+-	"crypto/sha256"
+-	"encoding/hex"
+-)
++import "golang.org/x/crypto/bcrypt"
+ 
+-// flag_3 (A04 cryptographic_failures): passwords are stored as a fast, unsalted
+-// SHA-256 digest despite the column being named "password_hash" (which implies a
+-// proper password hash like bcrypt). SHA-256 is trivially brute-forceable.
++// flag_3 (A04): passwords are now stored with bcrypt (salted, slow), and
++// verified in constant time via CompareHashAndPassword.
+ func hashPassword(password string) string {
+-	sum := sha256.Sum256([]byte(password))
+-	return hex.EncodeToString(sum[:])
++    h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
++    if err != nil {
++        return ""
++    }
++    return string(h)
+ }
+ 
+ func checkPassword(storedHash, password string) bool {
+-	return storedHash == hashPassword(password)
++    return bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(password)) == nil
+ }
+--- a/db.go
++++ b/db.go
+@@ -70,11 +70,11 @@
+ 		}
+ 	}
+ 
+-	// Users. Passwords are weak/guessable in the unpatched build.
++	// Users. Patched: rotated strong passwords, re-hashed with bcrypt on restart.
+ 	users := []struct{ Username, Password, Role string }{
+-		{"admin", "fleetadmin2024", "admin"},
+-		{"dispatcher", "dispatch456", "dispatcher"},
+-		{"driver", "fleet123", "driver"},
++		{"admin", "S7Admin-5pW2-Fleet!", "admin"},
++		{"dispatcher", "S7Dispatch-7hR4-Ops!", "dispatcher"},
++		{"driver", "S7Driver-9kZ8-Route!", "driver"},
+ 	}
+ 	for _, u := range users {
+ 		if _, err := db.Exec(
+--- a/handlers.go
++++ b/handlers.go
+@@ -15,22 +15,25 @@
+ }
+ 
+ func loginHandler(w http.ResponseWriter, r *http.Request) {
++	ip := clientIP(r)
++	if loginAttemptsExceeded(ip) {
++		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "Too many login attempts"})
++		return
++	}
+ 	var creds credentials
+ 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
+ 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+ 		return
+ 	}
+ 	user := findUserByUsername(creds.Username)
+-	// flag_5 (A07): no rate limiting, and distinct error messages for an unknown
+-	// user vs. a wrong password let an attacker enumerate valid usernames.
+-	if user == nil {
+-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "User not found"})
++	// flag_5 (A07): rate limited, and a single generic error message that does
++	// not reveal whether the username exists.
++	if user == nil || !checkPassword(user.PasswordHash, creds.Password) {
++		recordLoginFailure(ip)
++		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
+ 		return
+ 	}
+-	if !checkPassword(user.PasswordHash, creds.Password) {
+-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid password"})
+-		return
+-	}
++	clearLoginFailures(ip)
+ 	setSession(w, user.ID)
+ 	writeJSON(w, http.StatusOK, map[string]string{"message": "Login successful", "role": user.Role})
+ }
+@@ -61,7 +64,11 @@
+ 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+ 		return
+ 	}
+-	// flag_1 (A01): no role check — any authenticated user reaches admin settings.
++	// flag_1 (A01): enforce the admin role, not just an authenticated session.
++	if user.Role != "admin" {
++		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Admin access required"})
++		return
++	}
+ 	flag := flagValue("flag_1")
+ 	writeJSON(w, http.StatusOK, map[string]any{
+ 		"config": map[string]any{"maintenance": false, "system_token": flag},
+@@ -104,10 +111,9 @@
+ 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+ 		return
+ 	}
+-	// flag_3 (A04): leaks the stored password hash as "legacy_token".
++	// flag_3 (A04): the stored password hash is no longer exposed.
+ 	writeJSON(w, http.StatusOK, map[string]any{
+-		"username":     user.Username,
+-		"legacy_token": user.PasswordHash,
++		"username": user.Username,
+ 	})
+ }
+ 
+@@ -142,10 +148,8 @@
+ 
+ func vehiclesSearchHandler(w http.ResponseWriter, r *http.Request) {
+ 	q := r.URL.Query().Get("q")
+-	// flag_4 (A05 injection): the user-controlled query is concatenated straight
+-	// into the SQL string instead of using a bound placeholder.
+-	query := "SELECT id, name, status FROM vehicles WHERE name LIKE '%" + q + "%'"
+-	rows, err := db.Query(query)
++	// flag_4 (A05): user input is bound via a placeholder, not concatenated.
++	rows, err := db.Query("SELECT id, name, status FROM vehicles WHERE name LIKE ?", "%"+q+"%")
+ 	if err != nil {
+ 		writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
+ 		return
+--- a/main.go
++++ b/main.go
+@@ -109,7 +109,6 @@
+ 	mux.HandleFunc("GET /dashboard", dashboardHandler)
+ 	mux.HandleFunc("GET /admin/settings", adminSettingsHandler)
+ 	mux.HandleFunc("GET /admin/metrics", adminMetricsHandler)
+-	mux.HandleFunc("GET /debug/env", debugEnvHandler)
+ 	mux.HandleFunc("GET /profile/token", profileTokenHandler)
+ 	mux.HandleFunc("GET /profile/vault", profileVaultHandler)
+ 	mux.HandleFunc("GET /vehicles", vehiclesHandler)
