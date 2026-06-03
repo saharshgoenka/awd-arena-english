@@ -1,0 +1,51 @@
+require "digest"
+
+# Seed flags from environment
+%w[flag_1 flag_2 flag_3 flag_4 flag_5].each_with_index do |name, i|
+  env_key = "FLAG_#{i + 1}"
+  value = ENV.fetch(env_key, "FLAG{#{"0" * 32}}")
+  Flag.find_or_initialize_by(name: name).tap do |f|
+    f.value = value
+    f.save!
+  end
+end
+
+# Users: MD5 hashes (flag_3 vulnerability)
+# MD5("cmsadmin2024") = 3a5b8e9f1c0d7a2e6b4f9c3d8a1e5b7f  (NOT the actual hash — computed below)
+# MD5("editor456")    = ...
+# MD5("password123")  = 482c811da5d5b4bc6d497ffa98491e38
+[
+  { username: "admin",  password: "cmsadmin2024", role: "admin"  },
+  { username: "editor", password: "editor456",    role: "editor" },
+  { username: "author", password: "password123",  role: "author" },
+].each do |u|
+  User.find_or_initialize_by(username: u[:username]).tap do |user|
+    user.password_digest = Digest::MD5.hexdigest(u[:password])
+    user.role = u[:role]
+    user.save!
+  end
+end
+
+# Sample posts
+admin_user  = User.find_by(username: "admin")
+editor_user = User.find_by(username: "editor")
+author_user = User.find_by(username: "author")
+
+posts = [
+  { title: "Welcome to ContentHub",      body: "ContentHub is your new home for collaborative content.",          status: "published", user: admin_user  },
+  { title: "Editorial Guidelines 2024",  body: "All submissions must follow AP style. Deadlines are firm.",       status: "published", user: editor_user },
+  { title: "My First Draft",             body: "This post is still being refined. Stay tuned for the final cut.", status: "draft",     user: author_user },
+  { title: "Q1 Content Calendar",        body: "Topics assigned for January through March are listed here.",      status: "published", user: editor_user },
+  { title: "Site Relaunch Announcement", body: "We are thrilled to announce the ContentHub v2 relaunch.",         status: "published", user: admin_user  },
+  { title: "Author Spotlight: Jane Doe", body: "Jane Doe has been writing for us since 2021. A true professional.", status: "published", user: editor_user },
+  { title: "Behind the Scenes",          body: "A look at how our editorial team produces content at scale.",     status: "draft",     user: author_user },
+  { title: "Trending Topics This Week",  body: "AI, climate policy, and space exploration top this week's list.", status: "published", user: editor_user },
+]
+
+posts.each do |p|
+  Post.find_or_create_by(title: p[:title]) do |post|
+    post.body   = p[:body]
+    post.status = p[:status]
+    post.user   = p[:user]
+  end
+end
