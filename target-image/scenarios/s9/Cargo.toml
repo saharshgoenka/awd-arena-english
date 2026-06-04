@@ -1,0 +1,23 @@
+[package]
+name = "vaultgate"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "vaultgate"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = "4"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+md5 = "0.7"
+uuid = { version = "1", features = ["v4"] }
+# Used by the defender's flag_3 patch (db.rs switches MD5 -> bcrypt). Listed up
+# front so the in-container rebuild after patching works offline.
+bcrypt = "0.15"
+
+[profile.release]
+# Keep the in-container incremental rebuild after a patch fast.
+opt-level = 1

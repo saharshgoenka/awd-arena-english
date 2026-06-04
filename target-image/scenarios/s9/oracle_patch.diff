@@ -1,0 +1,188 @@
+# S9/Actix-web VaultGate - patches all 5 flag paths
+#
+# Applied from /app inside the container:
+#   patch -p1 < oracle_patch.diff
+# Then restart (start.sh recompiles the patched Rust source):
+#   supervisorctl restart app
+#
+# Patches:
+#   flag_1 (A01) - add AuthSession extractor + admin role check to admin_keys
+#   flag_2 (A02) - remove the /api/debug/config route
+#   flag_3 (A04) - bcrypt instead of MD5; drop password_hash from profile; rotate passwords
+#   flag_4 (A05) - bind the search term with a ?1 placeholder
+#   flag_5 (A07) - per-IP login rate limiting
+--- a/src/auth.rs	2026-06-03 23:10:14
++++ b/src/auth.rs	2026-06-03 23:11:02
+@@ -4,7 +4,10 @@
+ };
+ use serde::Deserialize;
+ use serde_json::json;
++use std::collections::HashMap;
+ use std::future::{ready, Ready};
++use std::sync::{LazyLock, Mutex};
++use std::time::Instant;
+ 
+ use crate::db::{self, DbPool};
+ 
+@@ -52,17 +55,52 @@
+     pub password: String,
+ }
+ 
+-pub async fn login(db: web::Data<DbPool>, body: web::Json<LoginReq>) -> impl Responder {
++// flag_5 (A07): per-IP login attempt tracking. Actix-web has no built-in rate
++// limiter, so we implement one explicitly.
++static LOGIN_ATTEMPTS: LazyLock<Mutex<HashMap<String, (u32, Instant)>>> =
++    LazyLock::new(|| Mutex::new(HashMap::new()));
++
++const MAX_ATTEMPTS: u32 = 5;
++const WINDOW_SECS: u64 = 60;
++
++pub async fn login(
++    http_req: HttpRequest,
++    db: web::Data<DbPool>,
++    body: web::Json<LoginReq>,
++) -> impl Responder {
++    let ip = http_req
++        .peer_addr()
++        .map(|a| a.ip().to_string())
++        .unwrap_or_default();
++
++    {
++        let attempts = LOGIN_ATTEMPTS.lock().unwrap();
++        if let Some((count, first)) = attempts.get(&ip) {
++            if first.elapsed().as_secs() < WINDOW_SECS && *count >= MAX_ATTEMPTS {
++                return HttpResponse::TooManyRequests()
++                    .json(json!({ "error": "too many login attempts" }));
++            }
++        }
++    }
++
+     let conn = db.lock().unwrap();
+     if let Some(user) = db::find_user(&conn, &body.username) {
+         if db::check_password(&user.password_hash, &body.password) {
+             let token = uuid::Uuid::new_v4().to_string();
+             db::create_session(&conn, &token, &user.username, &user.role);
++            LOGIN_ATTEMPTS.lock().unwrap().remove(&ip);
+             return HttpResponse::Ok().json(json!({ "token": token, "role": user.role }));
+         }
+     }
+-    // flag_5 (A07 authentication_failures): no rate limiting on this endpoint,
+-    // so weak credentials are brute-forceable.
++
++    {
++        let mut attempts = LOGIN_ATTEMPTS.lock().unwrap();
++        let entry = attempts.entry(ip).or_insert((0, Instant::now()));
++        if entry.1.elapsed().as_secs() >= WINDOW_SECS {
++            *entry = (0, Instant::now());
++        }
++        entry.0 += 1;
++    }
+     HttpResponse::Unauthorized().json(json!({ "error": "invalid credentials" }))
+ }
+ 
+--- a/src/db.rs	2026-06-03 23:10:14
++++ b/src/db.rs	2026-06-03 23:10:42
+@@ -11,14 +11,14 @@
+     pub role: String,
+ }
+ 
+-// flag_3 (A04 cryptographic_failures): MD5 is a fast, unsalted checksum, not a
+-// password hash, despite the column being named password_hash.
++// flag_3 (A04): passwords are now hashed with bcrypt (salted, slow) and verified
++// in constant time.
+ pub fn hash_password(password: &str) -> String {
+-    format!("{:x}", md5::compute(password))
++    bcrypt::hash(password, 10).unwrap_or_default()
+ }
+ 
+ pub fn check_password(stored: &str, password: &str) -> bool {
+-    stored == hash_password(password)
++    bcrypt::verify(password, stored).unwrap_or(false)
+ }
+ 
+ const SCHEMA: &str = "
+@@ -73,11 +73,11 @@
+         .unwrap();
+     }
+ 
+-    // Users. Passwords are weak/guessable in the unpatched build.
++    // Users. Patched: rotated strong passwords, re-hashed with bcrypt on restart.
+     let users = [
+-        ("admin", "vaultadmin2024", "admin"),
+-        ("engineer", "password123", "engineer"),
+-        ("readonly", "readonly789", "readonly"),
++        ("admin", "S9Admin-3vB7-Vault!", "admin"),
++        ("engineer", "S9Engineer-6nK2-Keys!", "engineer"),
++        ("readonly", "S9Readonly-8pX4-View!", "readonly"),
+     ];
+     for (username, password, role) in users {
+         conn.execute(
+--- a/src/handlers.rs	2026-06-03 23:10:14
++++ b/src/handlers.rs	2026-06-03 23:11:23
+@@ -11,9 +11,11 @@
+     HttpResponse::Ok().json(json!({ "status": "ok" }))
+ }
+ 
+-// flag_1 (A01 broken_access_control): no AuthSession extractor in the signature,
+-// so no authentication or role check runs at all.
+-pub async fn admin_keys(db: web::Data<DbPool>) -> impl Responder {
++// flag_1 (A01): require an authenticated admin session.
++pub async fn admin_keys(session: AuthSession, db: web::Data<DbPool>) -> impl Responder {
++    if session.role != "admin" {
++        return HttpResponse::Forbidden().json(json!({ "error": "admin access only" }));
++    }
+     let conn = db.lock().unwrap();
+     let flag = db::get_flag(&conn, "flag_1").unwrap_or_default();
+     HttpResponse::Ok().json(json!({ "system_token": flag }))
+@@ -33,8 +35,7 @@
+ struct UserProfile {
+     id: i64,
+     username: String,
+-    // flag_3 (A04): the stored password hash is exposed in the profile response.
+-    password_hash: String,
++    // flag_3 (A04): the password hash is no longer exposed.
+     role: String,
+ }
+ 
+@@ -44,7 +45,6 @@
+         Some(u) => HttpResponse::Ok().json(UserProfile {
+             id: u.id,
+             username: u.username,
+-            password_hash: u.password_hash,
+             role: u.role,
+         }),
+         None => HttpResponse::NotFound().json(json!({ "error": "not found" })),
+@@ -72,18 +72,15 @@
+     db: web::Data<DbPool>,
+ ) -> impl Responder {
+     let conn = db.lock().unwrap();
+-    // flag_4 (A05 injection): user input is interpolated into the SQL string via
+-    // format!() instead of being bound as a parameter.
+-    let sql = format!(
+-        "SELECT id, name, value FROM secrets WHERE name LIKE '%{}%'",
+-        query.q
+-    );
+-    let mut stmt = match conn.prepare(&sql) {
++    // flag_4 (A05): user input is bound via a parameter placeholder, not
++    // interpolated into the SQL string.
++    let mut stmt = match conn.prepare("SELECT id, name, value FROM secrets WHERE name LIKE ?1") {
+         Ok(s) => s,
+         Err(_) => return HttpResponse::Ok().json(json!({ "results": [] })),
+     };
++    let pattern = format!("%{}%", query.q);
+     let rows: Vec<serde_json::Value> = stmt
+-        .query_map([], |r| {
++        .query_map([pattern], |r| {
+             Ok(json!({
+                 "id": r.get::<_, i64>(0).unwrap_or_default(),
+                 "name": r.get::<_, String>(1).unwrap_or_default(),
+--- a/src/main.rs	2026-06-03 23:10:14
++++ b/src/main.rs	2026-06-03 23:10:20
+@@ -17,7 +17,6 @@
+             .route("/api/auth/login", web::post().to(auth::login))
+             .route("/api/auth/logout", web::post().to(auth::logout))
+             .route("/api/admin/keys", web::get().to(handlers::admin_keys))
+-            .route("/api/debug/config", web::get().to(handlers::debug_config))
+             .route("/api/users/profile", web::get().to(handlers::profile))
+             .route("/api/secrets/search", web::get().to(handlers::secret_search))
+             .route("/api/secrets/private", web::get().to(handlers::secret_private))
