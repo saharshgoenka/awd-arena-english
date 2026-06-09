@@ -6,6 +6,7 @@ type MatchRow = {
   match_id: string
   id?: string
   name?: string
+  scenario_id?: string
   status: string
   player_count?: number
   playerCount?: number
@@ -198,7 +199,10 @@ const HistoryPage: React.FC = () => {
                 }`}
                 onClick={() => navigate(isActive ? `/arena/${rowId}` : `/replay/${rowId}`)}
               >
-                <td className="py-3">{m.name ?? rowId}</td>
+                <td className="py-3">
+                  <div className="font-medium text-slate-100">{m.name ?? rowId}</div>
+                  {m.name && <div className="mt-1 text-xs font-mono text-slate-500">{rowId}</div>}
+                </td>
                 <td className="py-3">
                   <span className={`px-2 py-1 rounded text-xs ${
                     m.status === 'finished' ? 'bg-green-900/50 text-green-400' :

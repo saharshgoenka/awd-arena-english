@@ -437,6 +437,7 @@ def _list_matches_summary_sync() -> List[Dict[str, Any]]:
                 {
                     "match_id": row["match_id"],
                     "status": row["status"],
+                    "config": config,
                     "player_count": len(players),
                     "created_at": row["created_at"],
                     "finished_at": row["finished_at"],

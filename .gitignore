@@ -22,3 +22,6 @@ referee-engine/runs/
 .DS_Store
 .vscode/
 .idea/
+
+# Local assistant/workstation state
+.claude/

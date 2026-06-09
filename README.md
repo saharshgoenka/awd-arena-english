@@ -102,6 +102,33 @@ When the match ends, containers are removed and logs are kept for replay.
 
 > For automated, batched runs across a model × mode × scenario grid (the Phase A benchmark from [RESEARCH_PLAN.md](RESEARCH_PLAN.md)), see [Benchmark runs (Phase A)](#benchmark-runs-phase-a) below.
 
+## Run a sample round
+
+The fastest way to exercise a sample environment is the single-round runner.
+It reads [bench/samples.yaml](bench/samples.yaml), builds the referee payload,
+starts the match, and prints the match id plus localhost links.
+
+```bash
+# Start the arena stack.
+docker compose up -d --build
+
+# Provide an OpenRouter key. Either env var name works.
+echo 'openrouter=YOUR_OPENROUTER_KEY' > .env
+
+# Preview the exact request body without spending tokens.
+python3 referee-engine/sample_runner.py S1 --dry-run
+
+# Launch the default S1 head-to-head round:
+# DeepSeek V4 Flash vs Llama 4 Scout, 10 min defense + 10 min attack.
+python3 referee-engine/sample_runner.py S1
+```
+
+Watch the round at [http://localhost](http://localhost). The command also prints
+a status URL like `http://localhost:8000/api/matches/<match_id>`.
+
+For mode/model overrides, adding samples, and troubleshooting, see
+[Sample rounds](docs/sample-rounds.md).
+
 ---
 
 ## Smoke tests

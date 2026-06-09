@@ -67,6 +67,8 @@ PRICES = {
     # Llama-3.3-70B-Instruct — paid OpenRouter pricing verified 2026-05-22.
     # (Earlier $0.25 / $0.65 placeholder was a guess; real prices much lower.)
     "meta-llama/llama-3.3-70b-instruct":{"in_per_mtok": 0.10, "out_per_mtok": 0.32},
+    # Llama 4 Scout — cheaper second-model replacement for Qwen in one-off samples.
+    "meta-llama/llama-4-scout":        {"in_per_mtok": 0.08,  "out_per_mtok": 0.30},
 }
 
 # Older bench yamls may still pass :free slugs; resolve them to the paid entry.

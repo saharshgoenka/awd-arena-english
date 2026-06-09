@@ -24,6 +24,8 @@ type RawLeaderboardEntry = LeaderboardEntry & {
 
 type MatchStatus = {
   match_id: string
+  name?: string
+  scenario_id?: string
   status: string
   elapsed_seconds: number
   remaining_seconds: number
@@ -124,6 +126,8 @@ const formatArenaEvent = (event: MatchEvent): string | null => {
       return `Network ready: ${String(data.arena_network ?? '')}`
     case 'FLAGS_REFRESHED':
       return `Flags refreshed: ${String(data.player_count ?? '?')} targets`
+    case 'AGENT_ACTIVITY':
+      return `P${String(data.player_id ?? '?')} ${String(data.title ?? data.category ?? 'activity')}: ${String(data.body ?? '').slice(0, 220)}`
     case 'MATCH_FINISHED':
       return 'Match finished'
     case 'MATCH_ERROR':
@@ -140,6 +144,12 @@ const deriveArenaFeed = (events: MatchEvent[], persistedLogs?: unknown) => {
   const readyPlayers = new Set<number>()
   const agentLogs: Record<number, string[]> = {}
   const timeline: string[] = []
+  const playersWithStructuredActivity = new Set<number>()
+  for (const event of events) {
+    if (event.type !== 'AGENT_ACTIVITY') continue
+    const pid = toNumber(event.data?.player_id)
+    if (pid != null) playersWithStructuredActivity.add(pid)
+  }
 
   for (const event of [...events].sort((a, b) => eventTime(a.timestamp) - eventTime(b.timestamp))) {
     const data = event.data ?? {}
@@ -157,9 +167,25 @@ const deriveArenaFeed = (events: MatchEvent[], persistedLogs?: unknown) => {
     if (event.type === 'AGENT_STREAM') {
       const pid = toNumber(data.player_id)
       const content = data.content
-      if (pid != null && typeof content === 'string') {
+      if (pid != null && typeof content === 'string' && !playersWithStructuredActivity.has(pid)) {
         const lines = agentLogs[pid] ?? []
         agentLogs[pid] = [...lines, content]
+      }
+      continue
+    }
+
+    if (event.type === 'AGENT_ACTIVITY') {
+      const pid = toNumber(data.player_id)
+      const title = typeof data.title === 'string' ? data.title : 'Activity'
+      const category = typeof data.category === 'string' ? data.category : 'activity'
+      const phase = typeof data.phase === 'string' ? data.phase : 'match'
+      const body = typeof data.body === 'string' ? data.body : ''
+      if (pid != null && body) {
+        const lines = agentLogs[pid] ?? []
+        agentLogs[pid] = [
+          ...lines,
+          `[${new Date(event.timestamp).toLocaleTimeString()}] ${phase}/${category} · ${title}\n${body}`,
+        ]
       }
       continue
     }
@@ -407,6 +433,10 @@ const ArenaPage: React.FC = () => {
               fetchFeed()
               break
             }
+            case 'AGENT_ACTIVITY': {
+              fetchFeed()
+              break
+            }
             case 'AGENT_LOGS_COLLECTED': {
               fetchFeed()
               break
@@ -499,12 +529,18 @@ const ArenaPage: React.FC = () => {
   const selectedPlayerBubbles = selectedPlayerLog !== null && agentLogs[selectedPlayerLog]
     ? buildAgentBubbles(agentLogs[selectedPlayerLog], streamViewMode)
     : []
+  const matchTitle = matchInfo?.name || matchId
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4">
       <div className="max-w-7xl mx-auto space-y-6">
         <header className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">{matchId}</h1>
+          <div>
+            <h1 className="text-2xl font-semibold">{matchTitle}</h1>
+            {matchTitle !== matchId && (
+              <div className="mt-1 text-xs font-mono text-slate-400">{matchId}</div>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <span className={`px-3 py-1 rounded-full text-xs font-medium ${wsConnected ? 'bg-cyan-700 text-cyan-100' : 'bg-amber-700 text-amber-100'}`}>
               WS {wsConnected ? 'connected' : 'reconnecting'}

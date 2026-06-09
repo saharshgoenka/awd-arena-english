@@ -23,6 +23,8 @@ type LeaderboardEntry = {
 
 type MatchInfo = {
   match_id?: string
+  name?: string
+  scenario_id?: string
   status?: string
   finished_at?: string
   remaining_seconds?: number
@@ -422,12 +424,18 @@ const ReplayPage: React.FC = () => {
       return bTime - aTime
     })
   const recentSubmissionsViewportClass = 'h-[15rem] overflow-x-auto overflow-y-auto overscroll-contain'
+  const matchTitle = info?.name || matchId
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4">
       <div className="max-w-7xl mx-auto space-y-6">
         <header className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold">Replay — {matchId}</h1>
+          <div>
+            <h1 className="text-2xl font-semibold">Replay — {matchTitle}</h1>
+            {matchTitle !== matchId && (
+              <div className="mt-1 text-xs font-mono text-slate-400">{matchId}</div>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               snapshot.phase === 'defense' ? 'bg-emerald-600' :

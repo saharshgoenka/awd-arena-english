@@ -18,6 +18,7 @@ from agent_client import AgentSession  # noqa: E402
 from flag_manager import FlagManager  # noqa: E402
 from flag_manager import ScoringEngine  # noqa: E402
 from flag_manager import PlayerState  # noqa: E402
+from flag_manager import SLAChecker  # noqa: E402
 
 
 def _load_main_module(module_name: str):
@@ -86,6 +87,10 @@ async def _async_noop():
 
 async def _async_empty_matches():
     return []
+
+
+async def _fake_save_event(match_id: str, event_type: str, data: dict, timestamp):
+    return None
 
 
 @pytest.mark.asyncio
@@ -187,6 +192,107 @@ def test_get_match_status_excludes_submission_payload(monkeypatch):
     assert payload["recent_events"] == match.events[-10:]
 
 
+def test_get_match_status_freezes_elapsed_for_finished_match(monkeypatch):
+    monkeypatch.setattr("asyncio.create_subprocess_shell", lambda *args, **kwargs: None)
+    module = _load_main_module("test_main_status_finished_elapsed")
+
+    config = module.MatchConfig(players=[module.PlayerConfig(id=1, name="P1")])
+    match = module.MatchState("match_finished_elapsed", config)
+    match.status = "finished"
+    match.started_at = datetime(2026, 3, 27, 10, 0, 0)
+    match.finished_at = datetime(2026, 3, 27, 10, 20, 0)
+    match.players[1] = PlayerState(player_id=1, container_name="c1", target_container="t1", target_ip="10.0.0.1")
+    module.referee.matches[match.match_id] = match
+
+    payload = module.referee.get_match_status(match.match_id)
+
+    assert payload["elapsed_seconds"] == 1200
+    assert payload["remaining_seconds"] == 0
+
+
+def test_sample_sla_probe_config_uses_valid_login_contracts(monkeypatch):
+    monkeypatch.setattr("asyncio.create_subprocess_shell", lambda *args, **kwargs: None)
+    module = _load_main_module("test_main_sla_probe_config")
+
+    cases = {
+        "S7": ("/health", "/login", "POST", {"username": "driver", "password": "fleet123"}),
+        "S8": ("/health", "/login", "POST", {"username": "operator", "password": "operator789"}),
+        "S9": ("/health", "/api/auth/login", "POST", {"username": "engineer", "password": "password123"}),
+        "S3": ("/health", None, "GET", None),
+    }
+
+    for scenario, expected in cases.items():
+        config = module.MatchConfig(players=[module.PlayerConfig(id=1, name="P1")], scenario_id=scenario)
+        assert module.referee._sla_probe_config(config) == expected
+
+
+@pytest.mark.asyncio
+async def test_sla_checker_posts_configured_login_probe(monkeypatch):
+    commands = []
+
+    class DummyProc:
+        returncode = 0
+
+        async def communicate(self):
+            return b"", b""
+
+    async def fake_subprocess_shell(command, *args, **kwargs):
+        commands.append(command)
+        return DummyProc()
+
+    monkeypatch.setattr("asyncio.create_subprocess_shell", fake_subprocess_shell)
+
+    player = PlayerState(player_id=1, container_name="c1", target_container="target1", target_ip="10.0.0.1")
+    player.sla_login_path = "/login"
+    player.sla_login_method = "POST"
+    player.sla_login_body = {"username": "operator", "password": "operator789"}
+
+    results = await SLAChecker(check_interval=60, penalty_per_minute=10).check_all({1: player})
+
+    assert results == {1: True}
+    assert len(commands) == 2
+    assert "/health" in commands[0]
+    assert "/login" in commands[1]
+    assert "POST" in commands[1]
+    assert "operator789" in commands[1]
+
+
+def test_agent_stream_activity_extracts_readable_openclaw_events(monkeypatch):
+    monkeypatch.setattr("asyncio.create_subprocess_shell", lambda *args, **kwargs: None)
+    module = _load_main_module("test_main_agent_activity_extract")
+
+    raw_line = (
+        '{"type":"message","message":{"role":"assistant","content":['
+        '{"type":"thinking","thinking":"I should inspect the login handler."},'
+        '{"type":"toolCall","name":"exec","arguments":{"command":"sed -n 1,80p /app/app.py"}},'
+        '{"type":"text","text":"I found a SQL injection and will patch it."}'
+        ']}}'
+    )
+
+    activities = module._extract_agent_activities(1, "defense", raw_line)
+
+    assert [item["category"] for item in activities] == ["thought", "tool_call", "message"]
+    assert activities[0]["body"] == "I should inspect the login handler."
+    assert "sed -n" in activities[1]["body"]
+    assert activities[2]["title"] == "Assistant"
+
+
+def test_agent_stream_activity_redacts_secrets_from_plain_output(monkeypatch):
+    monkeypatch.setattr("asyncio.create_subprocess_shell", lambda *args, **kwargs: None)
+    module = _load_main_module("test_main_agent_activity_redact")
+
+    activities = module._extract_agent_activities(
+        2,
+        "attack",
+        "curl failed with key sk-or-v1-abc123SECRET and flag FLAG{hidden}",
+    )
+
+    assert len(activities) == 1
+    assert "sk-or-v1" not in activities[0]["body"]
+    assert "FLAG{hidden}" not in activities[0]["body"]
+    assert "[REDACTED]" in activities[0]["body"]
+
+
 @pytest.mark.asyncio
 async def test_submissions_endpoint_returns_persisted_records_only(monkeypatch):
     monkeypatch.setattr("asyncio.create_subprocess_shell", lambda *args, **kwargs: None)
@@ -258,6 +364,21 @@ async def test_lifespan_recovers_finished_match_submissions_into_api(tmp_path, m
     await database.update_match_status(match_id, "finished", finished_at)
     await database.save_event(
         match_id,
+        "CONTAINERS_CREATED",
+        {
+            "players": {
+                "1": {
+                    "target_ip": "10.88.1.2",
+                    "target_container": f"target_{match_id}_1",
+                    "network": f"awd_{match_id}_player_1",
+                    "isolated": True,
+                }
+            }
+        },
+        created_at,
+    )
+    await database.save_event(
+        match_id,
         "MATCH_FINISHED",
         {"leaderboard": {"1": {"player_id": 1, "total_score": 100}, "2": {"player_id": 2, "total_score": -50}}},
         finished_at,
@@ -280,6 +401,9 @@ async def test_lifespan_recovers_finished_match_submissions_into_api(tmp_path, m
         match = module.referee.matches[match_id]
         assert match.status == "finished"
         assert match.persisted_submissions == [saved_submission]
+        assert match.players[1].container_name == f"claw_{match_id}_1"
+        assert match.players[1].target_container == f"target_{match_id}_1"
+        assert match.players[1].target_ip == "10.88.1.2"
         assert match.players[1].score == 100
         assert match.players[1].attack_score == 100
         assert match.players[1].flags_captured == 1
@@ -451,6 +575,7 @@ async def test_success_submission_updates_score_from_persisted_submissions_not_r
         return None
 
     monkeypatch.setattr(module.database, "save_submission", _fake_save_submission)
+    monkeypatch.setattr(module.database, "save_event", _fake_save_event)
 
     config = module.MatchConfig(players=[module.PlayerConfig(id=1, name="P1"), module.PlayerConfig(id=2, name="P2")])
     match = module.MatchState("match_scoring_source", config)
@@ -506,6 +631,7 @@ async def test_submit_flag_persists_returned_submission_record_even_if_runtime_t
         saved_records.append((match_id, dict(submission)))
 
     monkeypatch.setattr(module.database, "save_submission", _fake_save_submission)
+    monkeypatch.setattr(module.database, "save_event", _fake_save_event)
 
     config = module.MatchConfig(players=[module.PlayerConfig(id=1, name="P1"), module.PlayerConfig(id=2, name="P2")])
     match = module.MatchState("match_submission_record_source", config)
@@ -554,6 +680,7 @@ async def test_submit_flag_returns_player_feedback_with_status_query_hint(monkey
         return None
 
     monkeypatch.setattr(module.database, "save_submission", _fake_save_submission)
+    monkeypatch.setattr(module.database, "save_event", _fake_save_event)
 
     config = module.MatchConfig(players=[module.PlayerConfig(id=1, name="P1"), module.PlayerConfig(id=2, name="P2")])
     match = module.MatchState("match_submission_feedback", config)
@@ -752,6 +879,7 @@ async def test_submit_flag_enqueues_victim_alert_instead_of_fire_and_forget(monk
         return None
 
     monkeypatch.setattr(module.database, "save_submission", _fake_save_submission)
+    monkeypatch.setattr(module.database, "save_event", _fake_save_event)
 
     config = module.MatchConfig(players=[module.PlayerConfig(id=1, name="P1"), module.PlayerConfig(id=2, name="P2")])
     match = module.MatchState("match_submission_buffered_alert", config)
@@ -1295,6 +1423,7 @@ async def test_submit_flag_scores_even_when_declared_target_mismatches(monkeypat
         saved_submissions.append((match_id, dict(submission)))
 
     monkeypatch.setattr(module.database, "save_submission", _fake_save_submission)
+    monkeypatch.setattr(module.database, "save_event", _fake_save_event)
 
     config = module.MatchConfig(players=[module.PlayerConfig(id=1, name="P1"), module.PlayerConfig(id=2, name="P2")])
     match = module.MatchState("match_submission_feedback_rejected", config)
@@ -1417,3 +1546,38 @@ async def test_detail_endpoint_keeps_recent_summary_while_events_endpoint_keeps_
     assert "events" not in detail
     assert "agent_logs" not in detail
     assert feed == {"events": match.events}
+
+
+@pytest.mark.asyncio
+async def test_events_endpoint_collects_live_agent_activity_from_session_tail(monkeypatch):
+    monkeypatch.setattr("asyncio.create_subprocess_shell", lambda *args, **kwargs: None)
+    module = _load_main_module("test_main_events_live_activity")
+
+    config = module.MatchConfig(players=[module.PlayerConfig(id=1, name="P1")])
+    match = module.MatchState("match_live_activity", config)
+    match.status = "initializing_agents"
+    match.players[1] = PlayerState(player_id=1, container_name="agent1", target_container="target1", target_ip="10.0.0.1")
+    match.agent_sessions[1] = AgentSession(player_id=1, container_name="agent1", target_container="target1", target_ip="10.0.0.1")
+    module.referee.matches[match.match_id] = match
+    monkeypatch.setattr(module.database, "save_event", lambda *args, **kwargs: _async_noop())
+
+    async def fake_tail(container_name, tail_lines=120):
+        assert container_name == "agent1"
+        return (
+            '{"type":"message","message":{"role":"assistant","content":['
+            '{"type":"text","text":"Patching the login query now."}'
+            ']}}\n'
+        )
+
+    monkeypatch.setattr(module.referee, "_read_live_agent_session_tail", fake_tail)
+
+    first = await module.get_events(match.match_id, limit=100)
+    second = await module.get_events(match.match_id, limit=100)
+
+    first_activities = [event for event in first["events"] if event["type"] == "AGENT_ACTIVITY"]
+    second_activities = [event for event in second["events"] if event["type"] == "AGENT_ACTIVITY"]
+    assert len(first_activities) == 1
+    assert first_activities[0]["data"]["body"] == "Patching the login query now."
+    assert match.players[1].ready_status == "AGENT_READY"
+    assert match.players[1].ready_reason == "READY_SESSION_LOG_ACTIVITY"
+    assert len(second_activities) == 1

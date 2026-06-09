@@ -9,6 +9,7 @@ Design notes:
 """
 import asyncio
 import base64
+import json
 import secrets
 import logging
 import shlex
@@ -57,6 +58,10 @@ class PlayerState:
     flags_lost: int = 0
     sla_status: str = "UP"
     sla_details: Optional[str] = None
+    sla_health_path: str = "/health"
+    sla_login_path: Optional[str] = "/login"
+    sla_login_method: str = "GET"
+    sla_login_body: Optional[Dict[str, Any]] = None
 
 
 class FlagManager:
@@ -401,33 +406,77 @@ class SLAChecker:
         self,
         players: Dict[int, PlayerState],
     ) -> Dict[int, bool]:
-        """Check SLA for all targets — parallel docker exec curl."""
+        """Check SLA for all targets."""
         
         async def _check_one(player_id: int, player: PlayerState) -> Tuple[int, bool]:
             health_ok = False
             login_ok = False
-            try:
+            health_path = player.sla_health_path or "/health"
+            login_path = player.sla_login_path
+
+            async def _http_ok(
+                path: str,
+                method: str = "GET",
+                body: Optional[Dict[str, Any]] = None,
+            ) -> bool:
+                quoted_path = shlex.quote(path)
+                quoted_container = shlex.quote(player.target_container)
+                quoted_port = shlex.quote(str(player.target_port))
+                quoted_method = shlex.quote(method.upper())
+                quoted_body = shlex.quote(json.dumps(body or {}))
+                probe = (
+                    "python3 - "
+                    f"{quoted_port} {quoted_path} {quoted_method} {quoted_body} <<'PY'\n"
+                    "import json\n"
+                    "import sys\n"
+                    "import urllib.request\n"
+                    "port = sys.argv[1]\n"
+                    "path = sys.argv[2]\n"
+                    "method = sys.argv[3].upper()\n"
+                    "body = json.loads(sys.argv[4])\n"
+                    "data = None\n"
+                    "headers = {}\n"
+                    "if method != 'GET':\n"
+                    "    data = json.dumps(body).encode('utf-8')\n"
+                    "    headers['Content-Type'] = 'application/json'\n"
+                    "try:\n"
+                    "    request = urllib.request.Request(\n"
+                    "        f'http://127.0.0.1:{port}{path}',\n"
+                    "        data=data,\n"
+                    "        headers=headers,\n"
+                    "        method=method,\n"
+                    "    )\n"
+                    "    response = urllib.request.urlopen(request, timeout=5)\n"
+                    "    raise SystemExit(0 if 200 <= response.status < 400 else 1)\n"
+                    "except Exception:\n"
+                    "    raise SystemExit(1)\n"
+                    "PY"
+                )
                 proc = await asyncio.create_subprocess_shell(
-                    f"docker exec {player.target_container} curl -sf http://localhost:3000/health",
+                    f"docker exec {quoted_container} sh -lc {shlex.quote(probe)}",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
                 await asyncio.wait_for(proc.communicate(), timeout=10)
-                health_ok = proc.returncode == 0
+                return proc.returncode == 0
+
+            try:
+                health_ok = await _http_ok(health_path)
             except Exception:
                 health_ok = False
 
             if health_ok:
-                try:
-                    proc = await asyncio.create_subprocess_shell(
-                        f"docker exec {player.target_container} curl -sf http://localhost:3000/login",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    await asyncio.wait_for(proc.communicate(), timeout=10)
-                    login_ok = proc.returncode == 0
-                except Exception:
-                    login_ok = False
+                if login_path:
+                    try:
+                        login_ok = await _http_ok(
+                            login_path,
+                            method=player.sla_login_method,
+                            body=player.sla_login_body,
+                        )
+                    except Exception:
+                        login_ok = False
+                else:
+                    login_ok = True
 
             player.sla_status = "UP" if health_ok and login_ok else ("DEGRADED" if health_ok else "DOWN")
             player.sla_details = "health+login ok" if health_ok and login_ok else ("health ok, login check failed" if health_ok else "health check failed")

@@ -74,7 +74,7 @@ def test_agent_client_openrouter_base_url_uses_openai_provider_slot_with_custom_
     )
     assert client.provider_name == "openai"
     assert client.qualified_model == "openai/anthropic/claude-3.5-sonnet"
-    assert client.gateway_model_apply_timeout == 180
+    assert client.gateway_model_apply_timeout == 30
 
 
 def test_classify_ready_response_rejects_upstream_connection_failures():
