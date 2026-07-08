@@ -20,7 +20,9 @@ router.get('/internal', requireAuth, (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Forbidden' });
   }
-  const flag = db.prepare("SELECT value FROM flags WHERE name = 'flag_5'").get();
+  // Read from env, not the `flags` table (only flag_4 stays in the DB so the
+  // flag_4 SQLi UNION cannot dump flag_5).
+  const flag = { value: process.env.FLAG_5 || 'FLAG{missing}' };
   res.json({
     projects: [
       { id: 1, name: 'TaskFlow Rewrite', status: 'active', budget: 120000 },

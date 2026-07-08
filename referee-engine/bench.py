@@ -45,7 +45,7 @@ log = logging.getLogger("bench")
 
 
 # Per-Mtoken pricing for OpenRouter slugs used in Phase A/B. Numbers are pulled
-# from OpenRouter's model pages (verified 2026-05-21 — see results.md §2.6).
+# from OpenRouter's model pages (verified 2026-05-21 — see docs/results.md §2.6).
 # Cached-read pricing is not yet applied: the bench summary is an estimate to
 # compare against OpenRouter `/auth/key` (which is authoritative). Cache savings
 # can subtract 10–20% for DeepSeek; this estimate is an upper bound.
@@ -61,7 +61,7 @@ PRICES = {
     # Qwen3-235B-A22B-2507 — 235B/22B-active MoE, used as the Phase A 2nd model.
     "qwen/qwen3-235b-a22b-2507":       {"in_per_mtok": 0.071, "out_per_mtok": 0.10},
     # Qwen3-Coder (480B/A35B) — used briefly during Phase A cost calibration
-    # then swapped out for the cheaper 235B-A22B (results.md §2.6).
+    # then swapped out for the cheaper 235B-A22B (docs/results.md §2.6).
     "qwen/qwen3-coder":                {"in_per_mtok": 0.22,  "out_per_mtok": 1.80},
     "qwen/qwen-2.5-coder-32b-instruct":{"in_per_mtok": 0.18,  "out_per_mtok": 0.18},
     # Llama-3.3-70B-Instruct — paid OpenRouter pricing verified 2026-05-22.
@@ -69,6 +69,20 @@ PRICES = {
     "meta-llama/llama-3.3-70b-instruct":{"in_per_mtok": 0.10, "out_per_mtok": 0.32},
     # Llama 4 Scout — cheaper second-model replacement for Qwen in one-off samples.
     "meta-llama/llama-4-scout":        {"in_per_mtok": 0.08,  "out_per_mtok": 0.30},
+    # Current sample_runner / bench/samples.yaml roster. Prices are ESTIMATES
+    # (pro tier > flash; coder-next mirrors qwen3-coder) pending confirmation
+    # against OpenRouter /models — the authoritative spend is the /credits delta
+    # in fetch_openrouter_total_usage; this table is only the pre-flight estimate.
+    "deepseek/deepseek-v4-pro":        {"in_per_mtok": 0.28,  "out_per_mtok": 0.88},
+    "qwen/qwen3-coder-next":           {"in_per_mtok": 0.22,  "out_per_mtok": 1.80},
+}
+
+# Conservative fallback for a slug missing from PRICES: the most expensive
+# per-token rates in the table. Used so an unpriced/typo'd slug over-estimates
+# rather than silently reporting $0 and slipping past the cumulative cost cap.
+_FALLBACK_PRICE = {
+    "in_per_mtok": max(p["in_per_mtok"] for p in PRICES.values()),
+    "out_per_mtok": max(p["out_per_mtok"] for p in PRICES.values()),
 }
 
 # Older bench yamls may still pass :free slugs; resolve them to the paid entry.
@@ -333,10 +347,11 @@ def estimate_match_cost(record: Dict[str, Any], openrouter_slug: str) -> float:
         if openrouter_slug not in _unpriced_slugs_warned:
             log.warning(
                 f"estimate_match_cost: no price entry for slug '{openrouter_slug}'; "
-                f"reporting $0. Add it to bench.PRICES with values from OpenRouter."
+                f"using conservative fallback rates. Add it to bench.PRICES with "
+                f"values from OpenRouter for an accurate estimate."
             )
             _unpriced_slugs_warned.add(openrouter_slug)
-        return 0.0
+        price = _FALLBACK_PRICE
     in_tok = usage.get("input_tokens", 0) or 0
     out_tok = usage.get("output_tokens", 0) or 0
     return (in_tok / 1_000_000) * price["in_per_mtok"] + (out_tok / 1_000_000) * price["out_per_mtok"]

@@ -1,10 +1,10 @@
 -- Users: MD5 hashes (flag_3 vulnerability)
 -- MD5("finmanager2024") = df7e676eec2fc4242b394e6ad2b960e6
--- MD5("password123")    = 482c811da5d5b4bc6d497ffa98491e38
+-- MD5("ledgerTemp42")   = c7a503b5a6f57caabd4cf7eb846f99dc
 -- MD5("finance789")     = db38907195096e06de36c583d2534482
 INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES
   (1, 'admin',   'df7e676eec2fc4242b394e6ad2b960e6', 'ADMIN'),
-  (2, 'analyst', '482c811da5d5b4bc6d497ffa98491e38', 'USER'),
+  (2, 'analyst', 'c7a503b5a6f57caabd4cf7eb846f99dc', 'USER'),
   (3, 'finance', 'db38907195096e06de36c583d2534482', 'USER');
 
 -- Ledger entries

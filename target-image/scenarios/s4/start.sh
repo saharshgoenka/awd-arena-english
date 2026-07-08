@@ -10,8 +10,7 @@ for i in 1 2 3 4 5; do
     fi
 done
 
-# Copy .env to public/ — flag_2 path B: GET /.env exposes FLAG_2
-cp /app/.env /app/public/.env
+rm -f /app/public/.env
 
 mkdir -p /app/data \
          /app/storage/framework/sessions \

@@ -1,40 +1,33 @@
-# S6/Rails ContentHub - patches all 5 flag paths
-#
-# Applied from /app inside the container:
-#   patch -p1 < oracle_patch.diff
-# Then restart:
-#   supervisorctl restart app
-#
-# Patches:
-#   flag_1 (A01) - add before_action :require_admin to AdminController
-#   flag_2 (A02) - remove DebugController route; set consider_all_requests_local=false
-#   flag_3 (A04) - switch User to has_secure_password; remove legacy_token from profile
-#   flag_4 (A05) - parameterize the ActiveRecord .where clause
-#   flag_5 (A07) - add rate limiting; unify error messages; rotate admin password
-
+# S6/Rails ContentHub — auto-generated patch for the secure oracle baseline
+# Apply from /app with: patch -p1 < oracle_patch.diff && supervisorctl restart app
 --- a/app/controllers/admin_controller.rb
 +++ b/app/controllers/admin_controller.rb
-@@ -3,2 +3 @@
+@@ -1,7 +1,6 @@
+ class AdminController < ApplicationController
+   before_action :require_login
 -  # flag_1: before_action :require_admin intentionally omitted
 -  # any logged-in user reaches settings
 +  before_action :require_admin
+ 
+   def settings
+     flag = Flag.find_by(name: "flag_1")&.value
 --- a/config/routes.rb
 +++ b/config/routes.rb
-@@ -12,2 +11,0 @@
+@@ -15,8 +15,6 @@
+   get "/admin/settings",    to: "admin#settings"
+   get "/admin/analytics",   to: "admin#analytics"
+ 
 -  get "/debug/runtime",     to: "debug#runtime"
 -
---- a/config/environments/production.rb
-+++ b/config/environments/production.rb
-@@ -6,2 +6 @@
--  # flag_2: intentionally wrong for production — exposes debug info
--  config.consider_all_requests_local = true
-+  config.consider_all_requests_local = false
+   get "/profile/token",     to: "profile#token"
+   get "/profile/vault",     to: "profile#vault"
+ 
 --- a/app/models/user.rb
 +++ b/app/models/user.rb
-@@ -1,2 +1,0 @@
+@@ -1,11 +1,3 @@
 -require "digest"
 -
-@@ -4,7 +2 @@
+ class User < ApplicationRecord
 -  # flag_3: password_digest column name implies has_secure_password (bcrypt),
 -  # but actually stores raw MD5 — NOT bcrypt
 -  def self.authenticate(username, password)
@@ -43,64 +36,90 @@
 -    user if user.password_digest == Digest::MD5.hexdigest(password)
 -  end
 +  has_secure_password
+ end
 --- a/app/controllers/sessions_controller.rb
 +++ b/app/controllers/sessions_controller.rb
-@@ -12 +12,8 @@
+@@ -9,17 +9,12 @@
+     username = params[:username].to_s
+     password = params[:password].to_s
+ 
 -    user = User.authenticate(username, password)
-+    cache_key = "login_failures/#{request.remote_ip}"
-+    failures = Rails.cache.read(cache_key).to_i
-+    if failures >= 10
-+      render json: { error: "Too many login attempts" }, status: :too_many_requests
-+      return
-+    end
-+
 +    user = User.find_by(username: username)&.authenticate(password)
-@@ -13,0 +21 @@
-+      Rails.cache.delete(cache_key)
-@@ -17,6 +25,2 @@
+     if user
+       session[:user_id] = user.id
+       render json: { message: "Login successful", role: user.role }
+     else
 -      # flag_5: different messages for unknown user vs wrong password
 -      if User.find_by(username: username)
 -        render json: { error: "Invalid password" }, status: :unauthorized
 -      else
 -        render json: { error: "User not found" }, status: :unauthorized
 -      end
-+      Rails.cache.write(cache_key, failures + 1, expires_in: 15.minutes)
 +      render json: { error: "Invalid credentials" }, status: :unauthorized
+     end
+   end
+ 
 --- a/app/controllers/profile_controller.rb
 +++ b/app/controllers/profile_controller.rb
-@@ -5 +4,0 @@
--    # flag_3: exposes the stored MD5 hash as "legacy_token"
-@@ -7,2 +6 @@
--      username: current_user.username,
--      legacy_token: current_user.password_digest
+@@ -2,14 +2,8 @@
+   before_action :require_login
+ 
+   def token
+-    lookup = params[:username].presence || current_user.username
+-    user = User.find_by(username: lookup)
+-    return render json: { error: "User not found" }, status: :not_found unless user
+-
+-    # flag_3: authenticated users can read another user's legacy hash.
+     render json: {
+-      username: user.username,
+-      legacy_token: user.password_digest
 +      username: current_user.username
+     }
+   end
+ 
 --- a/app/controllers/posts_controller.rb
 +++ b/app/controllers/posts_controller.rb
-@@ -20,2 +20 @@
+@@ -17,8 +17,7 @@
+ 
+   def search
+     q = params[:q].to_s
 -    # flag_4: SQL injection via string interpolation in ActiveRecord .where
 -    @posts = Post.where("title LIKE '%#{q}%'")
 +    @posts = Post.where("title LIKE ?", "%#{q}%")
+     render json: { results: @posts.as_json(only: [:id, :title, :body]) }
+   end
+ end
 --- a/db/seeds.rb
 +++ b/db/seeds.rb
-@@ -1,2 +1,0 @@
+@@ -1,5 +1,3 @@
 -require "digest"
 -
-@@ -13,4 +11,4 @@
+ # Seed flags from environment
+ %w[flag_1 flag_2 flag_3 flag_4 flag_5].each_with_index do |name, i|
+   env_key = "FLAG_#{i + 1}"
+@@ -10,17 +8,17 @@
+   end
+ end
+ 
 -# Users: MD5 hashes (flag_3 vulnerability)
 -# MD5("cmsadmin2024") = 3a5b8e9f1c0d7a2e6b4f9c3d8a1e5b7f  (NOT the actual hash — computed below)
 -# MD5("editor456")    = ...
--# MD5("password123")  = 482c811da5d5b4bc6d497ffa98491e38
+-# MD5("storyDraft2024") = ...
 +# Users: patched - BCrypt via has_secure_password with rotated strong passwords
 +# admin   / S6Admin-4xT9-CMS!
 +# editor  / S6Editor-2mK7-Hub!
 +# author  / S6Author-8nQ3-Posts!
-@@ -18,3 +16,3 @@
+ [
 -  { username: "admin",  password: "cmsadmin2024", role: "admin"  },
 -  { username: "editor", password: "editor456",    role: "editor" },
--  { username: "author", password: "password123",  role: "author" },
+-  { username: "author", password: "storyDraft2024", role: "author" },
 +  { username: "admin",  password: "S6Admin-4xT9-CMS!",    role: "admin"  },
 +  { username: "editor", password: "S6Editor-2mK7-Hub!",   role: "editor" },
 +  { username: "author", password: "S6Author-8nQ3-Posts!", role: "author" },
-@@ -23 +21 @@
+ ].each do |u|
+   User.find_or_initialize_by(username: u[:username]).tap do |user|
 -    user.password_digest = Digest::MD5.hexdigest(u[:password])
 +    user.password = u[:password]
+     user.role = u[:role]
+     user.save!
+   end

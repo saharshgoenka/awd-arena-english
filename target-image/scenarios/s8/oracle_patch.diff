@@ -1,4 +1,5 @@
-# S8/Gin-Go GridPulse - patches all 5 flag paths
+# S8/Gin-Go GridPulse - patches all 5 flag paths while preserving the referee's
+# operator/operator789 SLA probe credentials.
 #
 # Applied from /app inside the container:
 #   patch -p1 < oracle_patch.diff
@@ -6,9 +7,10 @@
 #   supervisorctl restart app
 #
 # Patches:
-#   flag_1 (A01) - move /admin/settings behind auth middleware + require admin role
+#   flag_1 (A01) - require admin role in adminSettingsHandler
 #   flag_2 (A02) - remove the expvar /debug/vars route (and stop publishing env)
-#   flag_3 (A04) - bcrypt instead of MD5; stop exposing the hash; rotate passwords
+#   flag_3 (A04) - bcrypt instead of MD5; stop exposing hashes; rotate only the
+#                  flag-bearing lineoperator account, not the SLA operator probe account
 #   flag_4 (A05) - bind the search term with a ? placeholder
 #   flag_5 (A07) - replace the guessable JWT HMAC secret with a high-entropy one
 --- a/crypto.go
@@ -43,31 +45,28 @@
  }
 --- a/db.go
 +++ b/db.go
-@@ -70,11 +70,11 @@
- 		}
- 	}
- 
--	// Users. Passwords are weak/guessable in the unpatched build.
-+	// Users. Patched: rotated strong passwords, re-hashed with bcrypt on restart.
+@@ -60,7 +60,7 @@
+-	// Users. Viewer is the intended low-priv foothold. Operator uses a weak MD5
+-	// password that is meant to be cracked only after its hash is leaked.
++	// Users. Keep the operator/operator789 SLA probe account stable, but rotate
++	// the flag-bearing lineoperator account to a strong password.
  	users := []struct{ Username, Password, Role string }{
--		{"admin", "gridpulse-admin-2024", "admin"},
--		{"operator", "operator789", "operator"},
--		{"viewer", "view123", "viewer"},
+-		{"admin", "S8Admin-Control-2024!", "admin"},
 +		{"admin", "S8Admin-5pW2-Grid!", "admin"},
-+		{"operator", "S8Operator-7hR4-Mesh!", "operator"},
-+		{"viewer", "S8Viewer-9kZ8-Pulse!", "viewer"},
+ 		{"operator", "operator789", "operator"},
+-		{"lineoperator", "meter2024", "operator"},
++		{"lineoperator", "S8LineOperator-7hR4-Mesh!", "operator"},
+ 		{"viewer", "view123", "viewer"},
  	}
- 	for _, u := range users {
- 		if _, err := db.Exec(
 --- a/handlers.go
 +++ b/handlers.go
-@@ -48,8 +48,12 @@
+@@ -45,8 +45,12 @@
  }
  
  func adminSettingsHandler(c *gin.Context) {
--	// flag_1 (A01): this handler is registered without auth middleware, so no
--	// identity or role is ever checked — anyone can read the admin config.
-+	// flag_1 (A01): enforce the admin role, not just an authenticated session.
+-	// flag_1 (A01): the route now requires any valid token, but the handler still
+-	// forgets to enforce the admin role.
++	// flag_1 (A01): enforce the admin role, not just the presence of any token.
 +	cl := claimsFrom(c)
 +	if cl == nil || cl.Role != "admin" {
 +		c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
@@ -76,21 +75,31 @@
  	c.JSON(http.StatusOK, gin.H{
  		"config": gin.H{"maintenance": false, "system_token": flagValue("flag_1")},
  	})
-@@ -78,11 +82,9 @@
+@@ -71,21 +75,12 @@
+ func profileTokenHandler(c *gin.Context) {
+ 	cl := claimsFrom(c)
+ 	user := findUserByID(cl.Sub)
+-	if requested := c.Query("username"); requested != "" {
+-		// flag_3 (A04): any authenticated user can request another account's
+-		// legacy token, leaking the MD5 digest needed for offline cracking.
+-		if other := findUserByUsername(requested); other != nil {
+-			user = other
+-		}
+-	}
+ 	if user == nil {
  		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
  		return
  	}
 -	// flag_3 (A04): exposes the stored MD5 password hash as "legacy_token",
 -	// giving an attacker the digest to crack offline.
-+	// flag_3 (A04): the stored password hash is no longer exposed.
++	// flag_3 (A04): stop exposing password hashes through the profile API.
  	c.JSON(http.StatusOK, gin.H{
 -		"username":     user.Username,
 -		"legacy_token": user.PasswordHash,
 +		"username": user.Username,
  	})
  }
- 
-@@ -107,10 +109,8 @@
+@@ -102,9 +100,7 @@
  
  func metersSearchHandler(c *gin.Context) {
  	q := c.Query("q")
@@ -132,7 +141,7 @@
  	"log"
  	"net/http"
  	"strings"
-@@ -44,7 +43,6 @@
+@@ -40,7 +39,6 @@
  
  func main() {
  	initDB()
@@ -140,7 +149,7 @@
  
  	gin.SetMode(gin.ReleaseMode)
  	r := gin.New()
-@@ -53,23 +51,19 @@
+@@ -49,11 +47,6 @@
  	r.GET("/health", healthHandler)
  	r.POST("/login", loginHandler)
  
@@ -148,25 +157,7 @@
 -	// published "environment" var dumps the whole process environment (FLAG_2
 -	// included) with no authentication. expvar belongs in development only.
 -	r.GET("/debug/vars", gin.WrapH(expvar.Handler()))
-+	// flag_2 (A02): the expvar /debug/vars handler is no longer mounted, so the
-+	// process environment is not exposed.
- 
--	// flag_1 (A01): the admin settings handler is registered on the bare router,
--	// outside the authenticated group — so no auth middleware runs and any
--	// unauthenticated client can read it.
--	r.GET("/admin/settings", adminSettingsHandler)
 -
--	// flag_4 (A05): meter search concatenates user input into the SQL string.
-+	// flag_4 (A05): meter search binds user input via a placeholder.
- 	r.GET("/meters/search", metersSearchHandler)
- 
  	// Authenticated routes. A valid JWT is required by authMiddleware.
  	auth := r.Group("/")
  	auth.Use(authMiddleware())
- 	auth.GET("/dashboard", dashboardHandler)
-+	// flag_1 (A01): admin settings now runs behind the auth middleware and the
-+	// handler enforces the admin role.
-+	auth.GET("/admin/settings", adminSettingsHandler)
- 	auth.GET("/admin/metrics", adminMetricsHandler)
- 	auth.GET("/profile/token", profileTokenHandler)
- 	auth.GET("/profile/vault", profileVaultHandler)

@@ -48,8 +48,8 @@ func dashboardHandler(c *gin.Context) {
 }
 
 func adminSettingsHandler(c *gin.Context) {
-	// flag_1 (A01): this handler is registered without auth middleware, so no
-	// identity or role is ever checked — anyone can read the admin config.
+	// flag_1 (A01): the route now requires any valid token, but the handler still
+	// forgets to enforce the admin role.
 	c.JSON(http.StatusOK, gin.H{
 		"config": gin.H{"maintenance": false, "system_token": flagValue("flag_1")},
 	})
@@ -74,6 +74,13 @@ func adminMetricsHandler(c *gin.Context) {
 func profileTokenHandler(c *gin.Context) {
 	cl := claimsFrom(c)
 	user := findUserByID(cl.Sub)
+	if requested := c.Query("username"); requested != "" {
+		// flag_3 (A04): any authenticated user can request another account's
+		// legacy token, leaking the MD5 digest needed for offline cracking.
+		if other := findUserByUsername(requested); other != nil {
+			user = other
+		}
+	}
 	if user == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
@@ -88,7 +95,7 @@ func profileTokenHandler(c *gin.Context) {
 
 func profileVaultHandler(c *gin.Context) {
 	cl := claimsFrom(c)
-	if cl == nil || cl.Username != "operator" {
+	if cl == nil || cl.Username != "lineoperator" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Operator access only"})
 		return
 	}

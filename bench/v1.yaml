@@ -5,7 +5,7 @@
 # Updated 2026-05-20 after smoke runs:
 #   - Switched to PAID OpenRouter endpoints (drop :free). Free-tier slugs hit
 #     HTTP 429 rate-limits mid-match (~5min wall clock) and the agent loop dies
-#     with stopReason=error. Documented in results.md §2.1 + §10 deviations.
+#     with stopReason=error. Documented in docs/results.md §2.1 + §10 deviations.
 #   - Raised token budget from 100K/25K to 1M/100K. Measured smoke usage on
 #     3-min def-only matches was 230-360K input / 16-25K output; full 15+25min
 #     matches will run higher.

@@ -4,9 +4,11 @@ const router = express.Router();
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
-// flag_1: no auth middleware on /config — any unauthenticated request can read it
-router.get('/config', (req, res) => {
-  const flag = db.prepare("SELECT value FROM flags WHERE name = 'flag_1'").get();
+// flag_1: authentication exists, but the admin role check is intentionally missing
+router.get('/config', requireAuth, (req, res) => {
+  // Read from env, not the `flags` table: only flag_4 lives in the DB (the
+  // SQLi-reachable flag). Keeping flag_1 here let the flag_4 UNION dump it too.
+  const flag = { value: process.env.FLAG_1 || 'FLAG{missing}' };
   res.json({
     config: {
       maintenance: false,

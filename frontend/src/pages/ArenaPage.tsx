@@ -88,6 +88,27 @@ const eventTime = (timestamp: string): number => {
   return Number.isFinite(t) ? t : 0
 }
 
+const isMachineStatusBlob = (body: string) =>
+  body.startsWith('{') &&
+  (body.includes('"schema_version"') || body.includes('"match_id"')) &&
+  (body.includes('"leaderboard_summary"') || body.includes('"score_changes_since_last_query"'))
+
+const isPromptDump = (body: string) =>
+  (body.includes('You are Player-') && body.includes('autonomous cybersecurity agent')) ||
+  body.includes('[Phase change] The **attack phase** has started')
+
+const shouldShowCleanAgentActivity = (category: string, title: string, body: string) => {
+  const normalizedTitle = title.toLowerCase()
+  const normalizedBody = body.toLowerCase()
+  if (!body.trim()) return false
+  if (category === 'log' || category === 'system' || category === 'stderr') return false
+  if (normalizedTitle.includes('agent event')) return false
+  if (normalizedBody.includes('file lock stale for')) return false
+  if (isMachineStatusBlob(body)) return false
+  if (isPromptDump(body)) return false
+  return true
+}
+
 const formatVictimLabel = (value: unknown): string => {
   const victimId = toNumber(value)
   return victimId == null ? 'None' : `P${String(victimId)}`
@@ -121,13 +142,14 @@ const formatArenaEvent = (event: MatchEvent): string | null => {
     case 'FLAG_SUBMISSION_REJECTED':
       return `Rejected: P${String(data.attacker_id ?? '?')} (${submissionReasonLabel(data.reason)})`
     case 'HEARTBEAT':
-      return `Heartbeat: ${String(data.remaining_seconds ?? '?')}s remaining`
+      return null
     case 'NETWORK_OPENED':
       return `Network ready: ${String(data.arena_network ?? '')}`
     case 'FLAGS_REFRESHED':
       return `Flags refreshed: ${String(data.player_count ?? '?')} targets`
     case 'AGENT_ACTIVITY':
-      return `P${String(data.player_id ?? '?')} ${String(data.title ?? data.category ?? 'activity')}: ${String(data.body ?? '').slice(0, 220)}`
+      if (data.category === 'log' || data.category === 'system') return null
+      return `P${String(data.player_id ?? '?')} ${String(data.title ?? data.category ?? 'activity')}: ${String(data.body ?? '').slice(0, 180)}`
     case 'MATCH_FINISHED':
       return 'Match finished'
     case 'MATCH_ERROR':
@@ -143,6 +165,7 @@ const formatArenaEvent = (event: MatchEvent): string | null => {
 const deriveArenaFeed = (events: MatchEvent[], persistedLogs?: unknown) => {
   const readyPlayers = new Set<number>()
   const agentLogs: Record<number, string[]> = {}
+  const rawAgentLogs: Record<number, string[]> = {}
   const timeline: string[] = []
   const playersWithStructuredActivity = new Set<number>()
   for (const event of events) {
@@ -167,9 +190,13 @@ const deriveArenaFeed = (events: MatchEvent[], persistedLogs?: unknown) => {
     if (event.type === 'AGENT_STREAM') {
       const pid = toNumber(data.player_id)
       const content = data.content
-      if (pid != null && typeof content === 'string' && !playersWithStructuredActivity.has(pid)) {
-        const lines = agentLogs[pid] ?? []
-        agentLogs[pid] = [...lines, content]
+      if (pid != null && typeof content === 'string') {
+        const rawLines = rawAgentLogs[pid] ?? []
+        rawAgentLogs[pid] = [...rawLines, content]
+        if (!playersWithStructuredActivity.has(pid)) {
+          const lines = agentLogs[pid] ?? []
+          agentLogs[pid] = [...lines, content]
+        }
       }
       continue
     }
@@ -181,11 +208,26 @@ const deriveArenaFeed = (events: MatchEvent[], persistedLogs?: unknown) => {
       const phase = typeof data.phase === 'string' ? data.phase : 'match'
       const body = typeof data.body === 'string' ? data.body : ''
       if (pid != null && body) {
-        const lines = agentLogs[pid] ?? []
-        agentLogs[pid] = [
-          ...lines,
-          `[${new Date(event.timestamp).toLocaleTimeString()}] ${phase}/${category} · ${title}\n${body}`,
-        ]
+        if (shouldShowCleanAgentActivity(category, title, body)) {
+          const lines = agentLogs[pid] ?? []
+          agentLogs[pid] = [
+            ...lines,
+            `[${new Date(event.timestamp).toLocaleTimeString()}] ${phase}/${category} · ${title}\n${body}`,
+          ]
+        }
+        const rawPreview =
+          typeof data.raw_preview === 'string'
+            ? data.raw_preview
+            : data.raw && typeof data.raw === 'object' && typeof (data.raw as { preview?: unknown }).preview === 'string'
+              ? String((data.raw as { preview?: unknown }).preview)
+              : ''
+        if (rawPreview) {
+          const rawLines = rawAgentLogs[pid] ?? []
+          rawAgentLogs[pid] = [
+            ...rawLines,
+            `[${new Date(event.timestamp).toLocaleTimeString()}] ${phase}/${category} · ${title}\n${rawPreview}`,
+          ]
+        }
       }
       continue
     }
@@ -193,7 +235,7 @@ const deriveArenaFeed = (events: MatchEvent[], persistedLogs?: unknown) => {
     if (event.type === 'AGENT_LOGS_COLLECTED') {
       const normalized = normalizePersistedAgentLogs(data.logs)
       for (const [pidRaw, lines] of Object.entries(normalized)) {
-        agentLogs[Number(pidRaw)] = lines
+        rawAgentLogs[Number(pidRaw)] = lines
       }
     }
   }
@@ -205,10 +247,16 @@ const deriveArenaFeed = (events: MatchEvent[], persistedLogs?: unknown) => {
     }
   }
 
+  for (const [pidRaw, lines] of Object.entries(normalizePersistedAgentLogs(persistedLogs))) {
+    const pid = Number(pidRaw)
+    if (!rawAgentLogs[pid]) rawAgentLogs[pid] = lines
+  }
+
   return {
     timeline: timeline.reverse(),
     readyPlayers,
     agentLogs,
+    rawAgentLogs,
   }
 }
 
@@ -240,6 +288,7 @@ const ArenaPage: React.FC = () => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [events, setEvents] = useState<string[]>([])
   const [agentLogs, setAgentLogs] = useState<Record<number, string[]>>({})
+  const [rawAgentLogs, setRawAgentLogs] = useState<Record<number, string[]>>({})
   const [submissions, setSubmissions] = useState<SubmissionItem[]>([])
   const [selectedPlayerLog, setSelectedPlayerLog] = useState<number | null>(null)
   const [streamViewMode, setStreamViewMode] = useState<StreamViewMode>('cleaned')
@@ -322,10 +371,16 @@ const ArenaPage: React.FC = () => {
       .then((resp: { events?: MatchEvent[] } | MatchEvent[] | null) => {
         if (!resp) return
         const raw = Array.isArray(resp) ? resp : resp.events ?? []
-        const { timeline, readyPlayers: nextReadyPlayers, agentLogs: nextAgentLogs } = deriveArenaFeed(raw, matchInfo?.agent_logs)
+        const {
+          timeline,
+          readyPlayers: nextReadyPlayers,
+          agentLogs: nextAgentLogs,
+          rawAgentLogs: nextRawAgentLogs,
+        } = deriveArenaFeed(raw, matchInfo?.agent_logs)
         setEvents(timeline)
         setReadyPlayers(nextReadyPlayers)
         setAgentLogs(nextAgentLogs)
+        setRawAgentLogs(nextRawAgentLogs)
         setSelectedPlayerLog((prevSelected) => {
           if (prevSelected != null && nextAgentLogs[prevSelected]) return prevSelected
           const firstPlayer = Object.keys(nextAgentLogs)
@@ -527,7 +582,12 @@ const ArenaPage: React.FC = () => {
     })
   const recentSubmissionsViewportClass = 'h-[15rem] overflow-x-auto overflow-y-auto overscroll-contain'
   const selectedPlayerBubbles = selectedPlayerLog !== null && agentLogs[selectedPlayerLog]
-    ? buildAgentBubbles(agentLogs[selectedPlayerLog], streamViewMode)
+    ? buildAgentBubbles(
+        streamViewMode === 'raw'
+          ? rawAgentLogs[selectedPlayerLog] ?? agentLogs[selectedPlayerLog]
+          : agentLogs[selectedPlayerLog],
+        streamViewMode,
+      )
     : []
   const matchTitle = matchInfo?.name || matchId
 

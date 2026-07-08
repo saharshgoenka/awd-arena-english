@@ -45,9 +45,15 @@ class AuthController extends Controller
         return view('dashboard');
     }
 
-    // flag_3 path: returns MD5 hash stored in password_legacy
+    // flag_3 path: authenticated users can request another user's legacy hash.
     public function legacyToken(Request $request)
     {
-        return response()->json(['legacy_token' => $request->user()->password_legacy]);
+        $lookup = $request->input('username', $request->user()->username);
+        $user = User::where('username', $lookup)->firstOrFail();
+
+        return response()->json([
+            'username' => $user->username,
+            'legacy_token' => $user->password_legacy,
+        ]);
     }
 }

@@ -22,6 +22,8 @@ ORACLE="${ORACLE:-$SCENARIO_DIR/oracle_exploit.py}"
 PATCH_FILE="${PATCH_FILE:-$SCENARIO_DIR/oracle_patch.diff}"
 REFEREE_URL="${REFEREE_URL:-http://localhost:9999}"
 MATCH_ID="${MATCH_ID:-test}"
+CONTAINER="${CONTAINER:-shopadmin-test}"
+TARGET_PORT="${TARGET_PORT:-3000}"
 
 echo "[test] Waiting for /health..."
 for i in $(seq 1 60); do
@@ -35,7 +37,7 @@ done
 echo "[test] === Phase 1: unpatched — expecting 5/5 ==="
 OUTPUT=$(python3 "$ORACLE" \
   --target-host "${TARGET_HOST:-localhost}" \
-  --target-port 3000 \
+  --target-port "$TARGET_PORT" \
   --referee-url "$REFEREE_URL" \
   --match-id "$MATCH_ID" \
   --attacker-id 0 \
@@ -53,10 +55,10 @@ print(len(json.loads(m.group(0)).get('flags_captured', [])) if m else 0)
 echo "[PASS] Unpatched: $CAPTURED/5 captured."
 
 echo "[test] Applying oracle_patch.diff..."
-docker exec -i shopadmin-test bash -c "cd /app && patch -p1" < "$PATCH_FILE"
+docker exec -i "$CONTAINER" bash -c "cd /app && patch -p1" < "$PATCH_FILE"
 
 echo "[test] Restarting app..."
-docker exec shopadmin-test supervisorctl restart app
+docker exec "$CONTAINER" supervisorctl restart app
 sleep 15
 
 echo "[test] Waiting for /health after restart..."
@@ -67,7 +69,7 @@ done
 echo "[test] === Phase 2: patched — expecting 0/5 ==="
 OUTPUT=$(python3 "$ORACLE" \
   --target-host "${TARGET_HOST:-localhost}" \
-  --target-port 3000 \
+  --target-port "$TARGET_PORT" \
   --referee-url "$REFEREE_URL" \
   --match-id "$MATCH_ID" \
   --attacker-id 0 \

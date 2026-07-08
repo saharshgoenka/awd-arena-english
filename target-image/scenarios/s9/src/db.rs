@@ -59,9 +59,10 @@ pub fn init_db() -> DbPool {
 fn seed(pool: &DbPool) {
     let conn = pool.lock().unwrap();
 
-    // Flags come from the environment (FLAG_1..FLAG_5), stored in the DB so the
-    // oracle can verify the live value.
-    for i in 1..=5 {
+    // Only flag_4 (the SQLi-reachable flag) is stored in the DB; the others are
+    // served from env by their handlers so one UNION injection can't dump every
+    // flag at once. get_flag() falls back to env for the non-DB flags.
+    for i in 4..=4 {
         let name = format!("flag_{}", i);
         let value = std::env::var(format!("FLAG_{}", i))
             .unwrap_or_else(|_| "FLAG{00000000000000000000000000000000}".to_string());
@@ -73,10 +74,12 @@ fn seed(pool: &DbPool) {
         .unwrap();
     }
 
-    // Users. Passwords are weak/guessable in the unpatched build.
+    // Users. Readonly is the intended foothold. Engineer uses a weak MD5-backed
+    // password that should be recovered only after its hash is leaked.
     let users = [
-        ("admin", "vaultadmin2024", "admin"),
+        ("admin", "S9Admin-Vault-Core!", "admin"),
         ("engineer", "password123", "engineer"),
+        ("vaulteng", "engshift7", "engineer"),
         ("readonly", "readonly789", "readonly"),
     ];
     for (username, password, role) in users {
@@ -158,4 +161,7 @@ pub fn get_flag(conn: &Connection, name: &str) -> Option<String> {
         |r| r.get(0),
     )
     .ok()
+    // Only flag_4 is in the DB; the rest come from env so the flag_4 SQLi
+    // cannot dump them.
+    .or_else(|| std::env::var(name.to_uppercase()).ok())
 }

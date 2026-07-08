@@ -1,4 +1,10 @@
 Rails.application.routes.draw do
+  get  "/",                 to: "discovery#home"
+  get  "/status",           to: "discovery#status"
+  get  "/help",             to: "discovery#help"
+  get  "/about",            to: "discovery#about"
+  get  "/api",              to: "discovery#api"
+
   get  "/health",           to: "health#index"
   get  "/login",            to: "sessions#new"
   post "/login",            to: "sessions#create"

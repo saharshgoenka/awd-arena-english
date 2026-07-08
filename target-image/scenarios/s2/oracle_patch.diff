@@ -1,15 +1,3 @@
-# S2/Django PeopleOps - patches all 5 flag paths
-#
-# Applied from the scenario directory:
-#   patch -p1 < oracle_patch.diff
-#
-# Patches:
-#   flag_1 (A01) - add @permission_required to staff_reports
-#   flag_2 (A02) - remove /__debug__/info/ URL; set DEBUG=False
-#   flag_3 (A04) - switch to PBKDF2 hasher; remove hash from employee detail; rotate weak password
-#   flag_4 (A05) - replace .raw() f-string with ORM filter
-#   flag_5 (A07) - add IP rate limiting to login; unify error messages
-
 --- a/peopleops/settings.py
 +++ b/peopleops/settings.py
 @@ -6,7 +6,7 @@
@@ -32,12 +20,11 @@
  LANGUAGE_CODE = "en-us"
 --- a/peopleops/urls.py
 +++ b/peopleops/urls.py
-@@ -6,7 +6,5 @@
+@@ -11,6 +11,5 @@
      path("logout/", hr_views.logout_view, name="logout"),
      path("dashboard/", hr_views.dashboard, name="dashboard"),
      path("health/", hr_views.health, name="health"),
--    # flag_2: debug endpoint — no auth; patch removes this line
--    path("__debug__/info/", hr_views.debug_info, name="debug_info"),
+-    path("api/diagnostics/", hr_views.diagnostics_info, name="diagnostics_info"),
      path("hr/", include("hr.urls")),
  ]
 --- a/hr/views.py
@@ -49,13 +36,13 @@
 -from django.contrib.auth.decorators import login_required
 +from django.contrib.auth.decorators import login_required, permission_required
  from django.contrib.auth.models import User
+ from django.db import connection
  from django.http import HttpResponse, JsonResponse
- from django.shortcuts import get_object_or_404, redirect, render
-@@ -17,21 +17,23 @@
+@@ -111,21 +111,23 @@
  
  # ── Auth ──────────────────────────────────────────────────────────────────────
  
-+_failed_attempts: dict = {}  # ip -> consecutive failure count
++_failed_attempts: dict = {}
 +
  def login_view(request):
      error = None
@@ -81,48 +68,68 @@
      return render(request, "hr/login.html", {"error": error})
  
  
-@@ -50,7 +52,7 @@
+@@ -144,7 +146,7 @@
  # @login_required present but @permission_required is intentionally missing.
  
  @login_required
 -# @permission_required('hr.view_reports', raise_exception=True)  # intentionally omitted
-+@permission_required('hr.view_reports', raise_exception=True)
++@permission_required("hr.view_reports", raise_exception=True)
  def staff_reports(request):
      flag = Flag.objects.get(name="flag_1")
      reports = [
-@@ -67,16 +69,7 @@
- # Debug endpoint dumps settings + os.environ; FLAG_2 is in environ. No auth.
+@@ -161,16 +163,7 @@
+ # Public diagnostics preview leaks one secret-bearing value.
  
- def debug_info(request):
--    import django.conf
--    data = {
--        "settings": {
--            k: str(v)
--            for k, v in vars(django.conf.settings).items()
--            if not k.startswith("_")
+ def diagnostics_info(request):
+-    return JsonResponse({
+-        "service": "PeopleOps diagnostics preview",
+-        "preview": {
+-            "payroll_sync_password": os.environ.get("FLAG_2", "FLAG{missing}"),
 -        },
--        "environ": dict(os.environ),
--    }
--    return JsonResponse(data)
+-        "notes": [
+-            "This endpoint should not expose production secret material.",
+-            "Only a preview bundle is shown here.",
+-        ],
+-    })
 +    return HttpResponse("Not Found", status=404)
  
  
  # ── flag_3: A04 Cryptographic Failures ────────────────────────────────────────
-@@ -109,13 +102,7 @@
- def employee_search(request):
+@@ -219,24 +212,16 @@
+ def employee_search_api(request):
      q = request.GET.get("q", "")
      if q:
--        results = list(Employee.objects.raw(
--            f"SELECT hr_employee.id, hr_employee.user_id, hr_employee.department, "
--            f"hr_employee.salary, hr_employee.employee_id, auth_user.username "
--            f"FROM hr_employee "
--            f"JOIN auth_user ON hr_employee.user_id = auth_user.id "
--            f"WHERE auth_user.username LIKE '%{q}%'"
--        ))
-+        results = list(Employee.objects.filter(user__username__icontains=q).select_related("user"))
+-        with connection.cursor() as cursor:
+-            cursor.execute(
+-                f"SELECT hr_employee.id, auth_user.username, hr_employee.department, "
+-                f"hr_employee.salary, hr_employee.employee_id "
+-                f"FROM hr_employee "
+-                f"JOIN auth_user ON hr_employee.user_id = auth_user.id "
+-                f"WHERE auth_user.username LIKE '%{q}%'"
+-            )
+-            rows = [
+-                {
+-                    "id": row[0],
+-                    "username": row[1],
+-                    "department": row[2],
+-                    "salary": str(row[3]),
+-                    "employee_id": row[4],
+-                }
+-                for row in cursor.fetchall()
+-            ]
++        rows = [
++            {
++                "id": employee.id,
++                "username": employee.user.username,
++                "department": employee.department,
++                "salary": str(employee.salary),
++                "employee_id": employee.employee_id,
++            }
++            for employee in Employee.objects.filter(user__username__icontains=q).select_related("user")
++        ]
      else:
-         results = list(Employee.objects.select_related("user").all())
-     return render(request, "hr/employee_search.html", {"results": results, "q": q})
+         rows = [
+             {
 --- a/hr/templates/hr/employee_detail.html
 +++ b/hr/templates/hr/employee_detail.html
 @@ -9,7 +9,6 @@
@@ -135,15 +142,16 @@
  </body>
 --- a/hr/management/commands/seed_flags.py
 +++ b/hr/management/commands/seed_flags.py
-@@ -17,10 +17,10 @@
- 
+@@ -18,9 +18,9 @@
          # 2. Seed users (passwords stored via UnsaltedMD5PasswordHasher)
          seed_users = [
--            ("admin",     "hrmanager2024", True,  True),
-+            ("admin",     "Q7mL2vR9xP4sT8nZ", True,  True),
-             ("hrstaff",   "staffpass1",    True,  False),
--            ("employee1", "password123",   False, False),
+             ("admin",     "hrmanager2024", True,  True),
+-            ("hrstaff",   "StaffSpring25!", True,  False),
+-            ("employee1", "employee1!",   False, False),
+-            ("jdoe",      "sunrise7",      False, False),
++            ("hrstaff",   "Q7mL2vR9xP4sT8nZ", True,  False),
 +            ("employee1", "B6kN3yV8cD2wM5qL", False, False),
-             ("jdoe",      "jdoe20242024",  False, False),
++            ("jdoe",      "R4pD8mT1vL6qX2sK", False, False),
              ("mwilson",   "wilsonsec99",   False, False),
          ]
+         for username, password, is_staff, is_superuser in seed_users:

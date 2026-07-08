@@ -230,6 +230,8 @@ async def test_setup_containers_passes_public_key_to_target_env(monkeypatch):
     async def fake_create_subprocess_exec(*command, stdin=None, stdout=None, stderr=None):
         if command[:6] == ("docker", "exec", "-i", "-u", "root", "claw_match_setup_1"):
             return _FakeProcess(b"")
+        if command[:6] == ("docker", "exec", "-i", "-u", "root", "target_match_setup_1"):
+            return _FakeProcess(b"")
         if command[:3] == ("docker", "exec", "claw_match_setup_1"):
             return _FakeProcess(b"ok\n")
         raise AssertionError(command)
@@ -282,6 +284,8 @@ async def test_setup_containers_installs_private_key_and_target_ssh_helper(monke
 
         if command[:6] == ("docker", "exec", "-i", "-u", "root", "claw_match_setup_1"):
             return _FakeProcess(b"", on_communicate=on_communicate)
+        if command[:6] == ("docker", "exec", "-i", "-u", "root", "target_match_setup_1"):
+            return _FakeProcess(b"", on_communicate=on_communicate)
         if command[:3] == ("docker", "exec", "claw_match_setup_1"):
             return _FakeProcess(b"ok\n", on_communicate=on_communicate)
         raise AssertionError(command)
@@ -314,7 +318,7 @@ async def test_setup_containers_installs_private_key_and_target_ssh_helper(monke
         if call["stdin"] and call["stdin"].startswith("#!/bin/sh\nset -eu\n")
     )
     assert "exec ssh -i /home/node/.ssh/awd_target_key" in helper_write["stdin"]
-    assert "defender@10.0.0.8 \"$@\"" in helper_write["stdin"]
+    assert "root@10.0.0.8 \"$@\"" in helper_write["stdin"]
     assert match.player_ssh_key_materials[1].helper_path == "/usr/local/bin/target-ssh"
     assert match.players[1].maintenance_auth_mode == "ssh_key"
     assert match.players[1].maintenance_helper_command == "target-ssh"

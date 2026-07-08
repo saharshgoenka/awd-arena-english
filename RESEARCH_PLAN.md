@@ -131,7 +131,7 @@ Original cap: **$5 total**, set when free-tier OpenRouter endpoints were assumed
 
 See §7.5 for the full Phase A spend breakdown and the proposed new cap.
 
-**Pre-flight rule (unchanged):** every phase begins with a projected spend estimate logged in [results.md](results.md). If the projection would push cumulative past the agreed cap, cut k or cut scenarios — do not silently overrun.
+**Pre-flight rule (unchanged):** every phase begins with a projected spend estimate logged in [docs/results.md](docs/results.md). If the projection would push cumulative past the agreed cap, cut k or cut scenarios — do not silently overrun.
 
 ### 4.5 Seeding and reproducibility
 
@@ -211,7 +211,7 @@ Collaborator feedback (2026-05-12): present progress as **tables + figures with 
 
 After §6 is far enough along to support runs, execute in this order:
 
-Every phase begins with a **pre-flight cost estimate** recorded in [results.md](results.md) §1: projected matches × per-match $ ceiling, compared to remaining budget. Do not start a phase that would push cumulative spend past $5.
+Every phase begins with a **pre-flight cost estimate** recorded in [docs/results.md](docs/results.md) §1: projected matches × per-match $ ceiling, compared to remaining budget. Do not start a phase that would push cumulative spend past $5.
 
 **Phase A — sanity (week 1 after engineering ready)**
 - Run defense-only and attack-only on S1 with 2 leaderboard models, k=2 = **8 matches**. Confirm metrics, runner stability, and *measure actual $/match* on each model.
@@ -243,7 +243,7 @@ Every phase begins with a **pre-flight cost estimate** recorded in [results.md](
 
 The legacy `target-image/ctf` was used during Phase A as a harness shakedown. The §4.1 redesign supersedes it; none of S1–S9 exist yet. **Phase A produced no usable capability data** (described below), but did surface methodology issues and harness bugs that need to be resolved before Phase B can produce real numbers.
 
-Detailed run log: [results.md](results.md).
+Detailed run log: [docs/results.md](docs/results.md).
 
 ### What we know from the calibration smokes (2026-05-23)
 
@@ -343,12 +343,12 @@ These are deferred from v1 to keep the experiment inside the $10 cap. Document t
 
 When resuming:
 
-1. Read this file (especially §7.5) and [results.md](results.md).
+1. Read this file (especially §7.5) and [docs/results.md](docs/results.md).
 2. The next action depends on whether the §7.5 "Next steps" items have moved:
    - If the §7.5 deviations have not been reviewed with the collaborator yet → that's the blocker for any Phase B work that would appear in a paper.
    - If `defense_only` token telemetry is still `0/0/0` → fix it; Phase B spend tracking depends on it.
    - If <6 scenarios exist → author the next missing one (§6.1 E1–E8).
-   - If all 6 scenarios pass `make verify` → run Phase B per §7 and append tables to [results.md](results.md) (no screenshots — per collaborator feedback 2026-05-12).
+   - If all 6 scenarios pass `make verify` → run Phase B per §7 and append tables to [docs/results.md](docs/results.md) (no screenshots — per collaborator feedback 2026-05-12).
    - If Phase B is complete → smoke-test the HVH code path on S1, then run Phase C.
-3. Update [results.md](results.md) with what changed, append a one-line entry to its §9 changelog, and refresh §7.5 here if the status shifts materially.
-4. Do not re-derive the plan from the transcript; if scope needs to change, edit this file and record the deviation in [results.md](results.md) §10.
+3. Update [docs/results.md](docs/results.md) with what changed, append a one-line entry to its §9 changelog, and refresh §7.5 here if the status shifts materially.
+4. Do not re-derive the plan from the transcript; if scope needs to change, edit this file and record the deviation in [docs/results.md](docs/results.md) §10.

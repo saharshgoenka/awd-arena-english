@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Trash2 } from 'lucide-react'
 import { API_BASE, fetchApi } from '../api'
 
 type MatchRow = {
@@ -28,12 +29,15 @@ const HistoryPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('All')
   const [endingMatchId, setEndingMatchId] = useState<string | null>(null)
   const [exportingCodeMatchId, setExportingCodeMatchId] = useState<string | null>(null)
+  const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const highlightedMatchId = searchParams.get('matchId')
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null)
 
   const loadMatches = () => {
+    setLoadError(null)
     fetchApi(`${API_BASE}/api/matches`)
       .then((r) => r.json())
       .then((data) => {
@@ -45,6 +49,7 @@ const HistoryPage: React.FC = () => {
         })
         setMatches(sortedList)
       })
+      .catch((error) => setLoadError(error instanceof Error ? error.message : 'Could not load match history'))
   }
 
   useEffect(() => {
@@ -146,6 +151,24 @@ const HistoryPage: React.FC = () => {
     }
   }
 
+  const handleDeleteMatch = async (e: React.MouseEvent, matchId: string) => {
+    e.stopPropagation()
+    setDeletingMatchId(matchId)
+    try {
+      const resp = await fetchApi(`${API_BASE}/api/matches/${matchId}`, { method: 'DELETE' })
+      if (!resp.ok) {
+        const text = await resp.text()
+        throw new Error(text || `HTTP ${resp.status}`)
+      }
+      setMatches((current) => current.filter((match) => (match.match_id ?? match.id ?? '') !== matchId))
+    } catch (err) {
+      console.error('Delete failed:', err)
+      alert(`Failed to delete match: ${err instanceof Error ? err.message : 'Check backend status'}`)
+    } finally {
+      setDeletingMatchId(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -162,6 +185,11 @@ const HistoryPage: React.FC = () => {
           <button className="px-3 py-2 rounded-md bg-slate-700 hover:bg-slate-600 transition-colors" onClick={loadMatches}>Refresh</button>
         </div>
       </div>
+      {loadError && (
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          Match history is unavailable: {loadError}
+        </div>
+      )}
       
       <table className="w-full text-sm">
         <thead>
@@ -250,6 +278,15 @@ const HistoryPage: React.FC = () => {
                       {endingMatchId === rowId ? 'Ending...' : 'End match'}
                     </button>
                   )}
+                  <button
+                    onClick={(e) => handleDeleteMatch(e, rowId)}
+                    disabled={deletingMatchId === rowId || isActive}
+                    title={isActive ? 'End the match before deleting it' : 'Delete match from history'}
+                    className="inline-flex items-center gap-1 px-3 py-1 bg-red-800 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 text-white rounded text-xs transition-colors"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    {deletingMatchId === rowId ? 'Deleting...' : 'Delete'}
+                  </button>
                 </td>
               </tr>
             )

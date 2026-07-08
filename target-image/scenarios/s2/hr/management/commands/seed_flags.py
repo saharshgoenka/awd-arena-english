@@ -9,8 +9,9 @@ class Command(BaseCommand):
     help = "Seed flags and initial HR data"
 
     def handle(self, *args, **options):
-        # 1. Seed flags from env vars
-        for i in range(1, 6):
+        # 1. Seed ONLY flag_4 (the SQLi-reachable flag). The others are served
+        #    from env by their views so one UNION injection can't dump them all.
+        for i in [4]:
             name = f"flag_{i}"
             value = os.environ.get(f"FLAG_{i}", f"FLAG{{{'0' * 32}}}")
             Flag.objects.update_or_create(name=name, defaults={"value": value})
@@ -18,9 +19,9 @@ class Command(BaseCommand):
         # 2. Seed users (passwords stored via UnsaltedMD5PasswordHasher)
         seed_users = [
             ("admin",     "hrmanager2024", True,  True),
-            ("hrstaff",   "staffpass1",    True,  False),
-            ("employee1", "password123",   False, False),
-            ("jdoe",      "jdoe20242024",  False, False),
+            ("hrstaff",   "StaffSpring25!", True,  False),
+            ("employee1", "employee1!",   False, False),
+            ("jdoe",      "sunrise7",      False, False),
             ("mwilson",   "wilsonsec99",   False, False),
         ]
         for username, password, is_staff, is_superuser in seed_users:

@@ -4,7 +4,7 @@
 # and §2.10 (atk-only for both models after the prompt fix). This config runs
 # one more match per cell to give every cell n=2.
 #
-# Expected spend (from results.md §2.6 + §2.10 empirical):
+# Expected spend (from docs/results.md §2.6 + §2.10 empirical):
 #   DeepSeek def-only:  ~$0.05-0.40  (highly iteration-dependent)
 #   DeepSeek atk-only:  ~$0.01-0.05  (atk runs are shorter)
 #   Qwen3-235B def:     ~$0.30-0.50

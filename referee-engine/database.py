@@ -452,6 +452,28 @@ async def list_matches_summary() -> List[Dict[str, Any]]:
     return await asyncio.to_thread(_list_matches_summary_sync)
 
 
+def _delete_match_sync(match_id: str) -> bool:
+    conn = _connect()
+    try:
+        existing = conn.execute(
+            "SELECT 1 FROM matches WHERE match_id = ?",
+            (match_id,),
+        ).fetchone()
+        if existing is None:
+            return False
+        conn.execute("DELETE FROM events WHERE match_id = ?", (match_id,))
+        conn.execute("DELETE FROM submissions WHERE match_id = ?", (match_id,))
+        conn.execute("DELETE FROM matches WHERE match_id = ?", (match_id,))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+async def delete_match(match_id: str) -> bool:
+    return await asyncio.to_thread(_delete_match_sync, match_id)
+
+
 async def save_loop(
     loop_id: str,
     status: str,

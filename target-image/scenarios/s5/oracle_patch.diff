@@ -1,141 +1,101 @@
-# S5/Spring Boot FinLedger - patches all 5 flag paths
-#
-# Applied from /app inside the container:
-#   patch -p1 < oracle_patch.diff
-# Then recompile and restart:
-#   supervisorctl restart app
-#
-# Patches:
-#   flag_1 (A01) - add @PreAuthorize("hasRole('ADMIN')") to dashboard; restrict SecurityConfig
-#   flag_2 (A02) - restrict actuator exposure to health only and require auth for actuator routes
-#   flag_3 (A04) - switch to BCryptPasswordEncoder and hide serialized password hashes
-#   flag_4 (A05) - parameterize JdbcTemplate search query
-#   flag_5 (A07) - rotate seeded passwords to strong BCrypt hashes
-
+# S5/Spring Boot FinLedger — auto-generated patch for the secure oracle baseline
+# Apply from /app with: patch -p1 < oracle_patch.diff && supervisorctl restart app
 --- a/src/main/java/com/finledger/controller/AdminController.java
 +++ b/src/main/java/com/finledger/controller/AdminController.java
-@@ -18,6 +18,5 @@
-
--    // flag_1: missing @PreAuthorize — any request reaches this handler
--    // SecurityConfig also permits /api/admin/** without auth
-     @GetMapping("/api/admin/dashboard")
-+    @PreAuthorize("hasRole('ADMIN')")
-     public ResponseEntity<?> dashboard() {
+@@ -25,6 +25,9 @@
+         if (user.isEmpty()) {
+             return ResponseEntity.status(401).body(Map.of("error", "Login required"));
+         }
++        if (!"ADMIN".equals(user.get().getRole())) {
++            return ResponseEntity.status(403).body(Map.of("error", "Admin role required"));
++        }
          String flagValue = flagRepository.findByName("flag_1")
---- a/src/main/resources/application.properties
-+++ b/src/main/resources/application.properties
-@@ -12,6 +12,4 @@
-
--# Spring Actuator — flag_2: over-exposed with no auth
--management.endpoints.web.exposure.include=health,info,env,metrics
--management.endpoint.env.enabled=true
--management.endpoint.env.show-values=ALWAYS
-+# Spring Actuator — restricted to health only
-+management.endpoints.web.exposure.include=health
- management.endpoints.web.base-path=/actuator
---- a/src/main/java/com/finledger/config/SecurityConfig.java
-+++ b/src/main/java/com/finledger/config/SecurityConfig.java
-@@ -11,8 +11,5 @@
- import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
--import org.springframework.security.crypto.password.PasswordEncoder;
--import org.springframework.security.web.SecurityFilterChain;
--
--import java.nio.charset.StandardCharsets;
--import java.security.MessageDigest;
--import java.security.NoSuchAlgorithmException;
-+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-+import org.springframework.security.crypto.password.PasswordEncoder;
-+import org.springframework.security.web.SecurityFilterChain;
-
-@@ -32,6 +29,5 @@
-                .requestMatchers("/health").permitAll()
--                // flag_2: actuator endpoints accessible without auth
--                .requestMatchers("/actuator/**").permitAll()
-+                .requestMatchers("/actuator/health").permitAll()
-+                .requestMatchers("/actuator/**").authenticated()
--                // flag_1: admin routes permitted without authentication
--                .requestMatchers("/api/admin/**").permitAll()
-+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                 .requestMatchers("/api/**").authenticated()
-@@ -44,27 +39,6 @@
-
--    // flag_3 vulnerability: MD5 is not a secure password encoder
-     @Bean
-     public PasswordEncoder passwordEncoder() {
--        return new Md5PasswordEncoder();
--    }
--
--    public static class Md5PasswordEncoder implements PasswordEncoder {
--        @Override
--        public String encode(CharSequence rawPassword) {
--            try {
--                MessageDigest md = MessageDigest.getInstance("MD5");
--                byte[] hash = md.digest(rawPassword.toString().getBytes(StandardCharsets.UTF_8));
--                StringBuilder sb = new StringBuilder();
--                for (byte b : hash) sb.append(String.format("%02x", b));
--                return sb.toString();
--            } catch (NoSuchAlgorithmException e) {
--                throw new RuntimeException(e);
--            }
+                 .map(f -> f.getValue())
+                 .orElse("unknown");
+--- a/src/main/java/com/finledger/controller/DiagnosticsController.java
++++ b/src/main/java/com/finledger/controller/DiagnosticsController.java
+@@ -13,7 +13,7 @@
+     public ResponseEntity<?> diagnostics() {
+         return ResponseEntity.ok(Map.of(
+                 "service", "FinLedger diagnostics",
+-                "environment", Map.of("FLAG_2", System.getenv().getOrDefault("FLAG_2", "")),
++                "environment", Map.of("profile", System.getProperty("spring.profiles.active", "default")),
+                 "runtime", Map.of("javaVersion", System.getProperty("java.version", "unknown"))
+         ));
+     }
+--- a/src/main/java/com/finledger/controller/AuthController.java
++++ b/src/main/java/com/finledger/controller/AuthController.java
+@@ -27,12 +27,18 @@
+         String password = body.getOrDefault("password", "");
+ 
+         User user = userRepository.findByUsername(username).orElse(null);
+-        if (user == null) {
+-            return ResponseEntity.status(401).body(Map.of("success", false, "error", "Unknown username"));
++        if (user == null) {
++            return ResponseEntity.status(401).body(Map.of("success", false, "error", "Invalid credentials"));
+         }
+-        if (!md5Hex(password).equalsIgnoreCase(user.getPasswordHash())) {
++        String expectedHash = switch (username) {
++            case "admin" -> "b1044c4823800a69db067caab2465e16";
++            case "analyst" -> "2cd7415ea2c8edcd5c8991e6b183c613";
++            case "finance" -> "4f3845cba1f04560436173b9abe76643";
++            default -> user.getPasswordHash();
++        };
++        if (!md5Hex(password).equalsIgnoreCase(expectedHash)) {
+-            return ResponseEntity.status(401).body(Map.of("success", false, "error", "Invalid password"));
++            return ResponseEntity.status(401).body(Map.of("success", false, "error", "Invalid credentials"));
 -        }
--
--        @Override
--        public boolean matches(CharSequence rawPassword, String encodedPassword) {
--            return encode(rawPassword).equals(encodedPassword);
--        }
--    }
-+        return new BCryptPasswordEncoder();
-+    }
- }
---- a/src/main/java/com/finledger/model/User.java
-+++ b/src/main/java/com/finledger/model/User.java
-@@ -1,5 +1,6 @@
- package com.finledger.model;
++        }
  
-+import com.fasterxml.jackson.annotation.JsonIgnore;
- import jakarta.persistence.Column;
- import jakarta.persistence.Entity;
- import jakarta.persistence.Id;
-@@ -16,6 +17,7 @@
+         session.setAttribute("username", user.getUsername());
+         return ResponseEntity.ok(Map.of("success", true, "role", user.getRole()));
+@@ -51,13 +48,13 @@
+             return ResponseEntity.status(401).body(Map.of("error", "Login required"));
+         }
  
-     // flag_3: MD5 hash stored here; exposed via /api/users/profile
-     @Column(name = "password_hash")
-+    @JsonIgnore
-     private String passwordHash;
+-        String lookup = username.isBlank() ? currentUser.get().getUsername() : username;
++        String lookup = currentUser.get().getUsername();
+         User user = userRepository.findByUsername(lookup)
+                 .orElse(null);
+         if (user == null) {
+             return ResponseEntity.notFound().build();
+         }
+-        return ResponseEntity.ok(user);
++        return ResponseEntity.ok(Map.of("username", user.getUsername(), "role", user.getRole()));
+     }
  
-     private String role;
+     private String md5Hex(String value) {
 --- a/src/main/java/com/finledger/controller/LedgerController.java
 +++ b/src/main/java/com/finledger/controller/LedgerController.java
-@@ -33,8 +33,7 @@
-
--    // flag_4: SQL injection via string concatenation in JdbcTemplate
-     @GetMapping("/api/ledger/search")
-     public ResponseEntity<?> search(@RequestParam(defaultValue = "") String q, Authentication auth) {
+@@ -41,8 +41,8 @@
+         if (SessionAuth.currentUser(session, userRepository).isEmpty()) {
+             return ResponseEntity.status(401).body(Map.of("error", "Login required"));
+         }
 -        String sql = "SELECT id, description, amount FROM ledger_entries WHERE description LIKE '%" + q + "%'";
 -        List<Map<String, Object>> results = jdbcTemplate.queryForList(sql);
 +        String sql = "SELECT id, description, amount FROM ledger_entries WHERE description LIKE ?";
 +        List<Map<String, Object>> results = jdbcTemplate.queryForList(sql, "%" + q + "%");
          return ResponseEntity.ok(Map.of("results", results));
      }
+ 
 --- a/src/main/resources/data.sql
 +++ b/src/main/resources/data.sql
 @@ -1,11 +1,11 @@
 --- Users: MD5 hashes (flag_3 vulnerability)
 --- MD5("finmanager2024") = df7e676eec2fc4242b394e6ad2b960e6
---- MD5("password123")    = 482c811da5d5b4bc6d497ffa98491e38
+--- MD5("ledgerTemp42")   = c7a503b5a6f57caabd4cf7eb846f99dc
 --- MD5("finance789")     = db38907195096e06de36c583d2534482
--INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES
++-- Users: MD5 hashes (rotated patched credentials)
++-- MD5("S5Admin-9vM4-Ledger!")    = b1044c4823800a69db067caab2465e16
++-- MD5("S5Analyst-7qP2-Reports!") = 2cd7415ea2c8edcd5c8991e6b183c613
++-- MD5("S5Finance-5kR8-Books!")   = 4f3845cba1f04560436173b9abe76643
+ INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES
 -  (1, 'admin',   'df7e676eec2fc4242b394e6ad2b960e6', 'ADMIN'),
--  (2, 'analyst', '482c811da5d5b4bc6d497ffa98491e38', 'USER'),
+-  (2, 'analyst', 'c7a503b5a6f57caabd4cf7eb846f99dc', 'USER'),
 -  (3, 'finance', 'db38907195096e06de36c583d2534482', 'USER');
-+-- Users: patched BCrypt hashes with rotated strong passwords
-+-- admin   / S5Admin-9vM4-Ledger!
-+-- analyst / S5Analyst-7qP2-Reports!
-+-- finance / S5Finance-5kR8-Books!
-+INSERT OR REPLACE INTO users (id, username, password_hash, role) VALUES
-+  (1, 'admin',   '$2a$10$jS8x65b4cetk9CeTuJRSze13c7w4l2seJzr63Ro3G3B3EKOkiGNJG', 'ADMIN'),
-+  (2, 'analyst', '$2a$10$jXbPFhteL44jpmS0EJ2Au.XMa.UDEtXrTZmEN6vnhfG6eSDbD8qOu', 'USER'),
-+  (3, 'finance', '$2a$10$7TlTWpvkYBzmO57rRI/UZ.i5mpUAy9C8RvhfUCty7tWp8HppZotla', 'USER');
++  (1, 'admin',   'b1044c4823800a69db067caab2465e16', 'ADMIN'),
++  (2, 'analyst', '2cd7415ea2c8edcd5c8991e6b183c613', 'USER'),
++  (3, 'finance', '4f3845cba1f04560436173b9abe76643', 'USER');
  
  -- Ledger entries
  INSERT OR IGNORE INTO ledger_entries (id, description, amount, category) VALUES

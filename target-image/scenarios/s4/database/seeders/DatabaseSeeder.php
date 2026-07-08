@@ -12,14 +12,13 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // Seed flags from environment variables (injected by supervisord at runtime)
+        // Seed ONLY flag_4 (the SQLi-reachable flag). The others are served from
+        // env by their controllers so one UNION injection can't dump them all.
         $placeholder = 'FLAG{00000000000000000000000000000000}';
-        for ($i = 1; $i <= 5; $i++) {
-            Flag::updateOrCreate(
-                ['name' => "flag_{$i}"],
-                ['value' => env("FLAG_{$i}", $placeholder)]
-            );
-        }
+        Flag::updateOrCreate(
+            ['name' => 'flag_4'],
+            ['value' => env('FLAG_4', $placeholder)]
+        );
 
         // Seed users: bcrypt for Auth::attempt, MD5 in password_legacy (flag_3 exposure)
         $users = [
@@ -35,8 +34,8 @@ class DatabaseSeeder extends Seeder
                 'name'            => 'Analyst',
                 'username'        => 'analyst',
                 'email'           => 'analyst@shopadmin.local',
-                'password'        => Hash::make('password123'),
-                'password_legacy' => md5('password123'),
+                'password'        => Hash::make('catalogTemp2024'),
+                'password_legacy' => md5('catalogTemp2024'),
                 'role'            => 'user',
             ],
             [

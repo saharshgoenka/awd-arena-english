@@ -20,12 +20,102 @@ services:
     entrypoint: ["true"]
     restart: "no"
 
+  oracle-s2:
+    build:
+      context: ./target-image/scenarios/s2
+      dockerfile: Dockerfile.oracle
+    image: openclaw/oracle-s2:v1
+    entrypoint: ["true"]
+    restart: "no"
+
+  oracle-s3:
+    build:
+      context: ./target-image/scenarios/s3
+      dockerfile: Dockerfile.oracle
+    image: openclaw/oracle-s3:v1
+    entrypoint: ["true"]
+    restart: "no"
+
+  oracle-s4:
+    build:
+      context: ./target-image/scenarios/s4
+      dockerfile: Dockerfile.oracle
+    image: openclaw/oracle-s4:v1
+    entrypoint: ["true"]
+    restart: "no"
+
+  oracle-s5:
+    build:
+      context: ./target-image/scenarios/s5
+      dockerfile: Dockerfile.oracle
+    image: openclaw/oracle-s5:v1
+    entrypoint: ["true"]
+    restart: "no"
+
+  oracle-s6:
+    build:
+      context: ./target-image/scenarios/s6
+      dockerfile: Dockerfile.oracle
+    image: openclaw/oracle-s6:v1
+    entrypoint: ["true"]
+    restart: "no"
+
+  oracle-s7:
+    build:
+      context: ./target-image/scenarios/s7
+      dockerfile: Dockerfile.oracle
+    image: openclaw/oracle-s7:v1
+    entrypoint: ["true"]
+    restart: "no"
+
+  oracle-s8:
+    build:
+      context: ./target-image/scenarios/s8
+      dockerfile: Dockerfile.oracle
+    image: openclaw/oracle-s8:v1
+    entrypoint: ["true"]
+    restart: "no"
+
+  oracle-s9:
+    build:
+      context: ./target-image/scenarios/s9
+      dockerfile: Dockerfile.oracle
+    image: openclaw/oracle-s9:v1
+    entrypoint: ["true"]
+    restart: "no"
+
+  nexusbi-s1:
+    build:
+      context: ./target-image/scenarios/s1
+      dockerfile: Dockerfile
+    image: nexusbi-s1:latest
+    entrypoint: ["true"]
+    restart: "no"
+
   referee-engine:
     build:
       context: ./referee-engine
     container_name: openclaw-referee
     depends_on:
       awd-openclaw-agent:
+        condition: service_completed_successfully
+      oracle-s1:
+        condition: service_completed_successfully
+      oracle-s2:
+        condition: service_completed_successfully
+      oracle-s3:
+        condition: service_completed_successfully
+      oracle-s4:
+        condition: service_completed_successfully
+      oracle-s5:
+        condition: service_completed_successfully
+      oracle-s6:
+        condition: service_completed_successfully
+      oracle-s7:
+        condition: service_completed_successfully
+      oracle-s8:
+        condition: service_completed_successfully
+      oracle-s9:
         condition: service_completed_successfully
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

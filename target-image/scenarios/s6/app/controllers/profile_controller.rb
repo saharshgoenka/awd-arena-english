@@ -2,10 +2,14 @@ class ProfileController < ApplicationController
   before_action :require_login
 
   def token
-    # flag_3: exposes the stored MD5 hash as "legacy_token"
+    lookup = params[:username].presence || current_user.username
+    user = User.find_by(username: lookup)
+    return render json: { error: "User not found" }, status: :not_found unless user
+
+    # flag_3: authenticated users can read another user's legacy hash.
     render json: {
-      username: current_user.username,
-      legacy_token: current_user.password_digest
+      username: user.username,
+      legacy_token: user.password_digest
     }
   end
 
@@ -14,7 +18,8 @@ class ProfileController < ApplicationController
       render json: { error: "Author access only" }, status: :forbidden
       return
     end
-    flag = Flag.find_by(name: "flag_3")&.value
+    # env, not the injectable flags table (only flag_4 lives in the DB)
+    flag = ENV.fetch("FLAG_3", "FLAG{missing}")
     render json: { message: "Author vault", secret: flag }
   end
 end

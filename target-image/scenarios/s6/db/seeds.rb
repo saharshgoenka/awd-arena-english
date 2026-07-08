@@ -1,8 +1,9 @@
 require "digest"
 
-# Seed flags from environment
-%w[flag_1 flag_2 flag_3 flag_4 flag_5].each_with_index do |name, i|
-  env_key = "FLAG_#{i + 1}"
+# Seed ONLY flag_4 (the SQLi-reachable flag). The others are served from env by
+# their controllers so one UNION injection can't dump every flag at once.
+%w[flag_4].each do |name|
+  env_key = "FLAG_4"
   value = ENV.fetch(env_key, "FLAG{#{"0" * 32}}")
   Flag.find_or_initialize_by(name: name).tap do |f|
     f.value = value
@@ -13,11 +14,11 @@ end
 # Users: MD5 hashes (flag_3 vulnerability)
 # MD5("cmsadmin2024") = 3a5b8e9f1c0d7a2e6b4f9c3d8a1e5b7f  (NOT the actual hash — computed below)
 # MD5("editor456")    = ...
-# MD5("password123")  = 482c811da5d5b4bc6d497ffa98491e38
+# MD5("storyDraft2024") = ...
 [
   { username: "admin",  password: "cmsadmin2024", role: "admin"  },
   { username: "editor", password: "editor456",    role: "editor" },
-  { username: "author", password: "password123",  role: "author" },
+  { username: "author", password: "storyDraft2024", role: "author" },
 ].each do |u|
   User.find_or_initialize_by(username: u[:username]).tap do |user|
     user.password_digest = Digest::MD5.hexdigest(u[:password])

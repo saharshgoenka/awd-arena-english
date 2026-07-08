@@ -50,6 +50,11 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
+	r.GET("/", homeHandler)
+	r.GET("/about", aboutHandler)
+	r.GET("/status", statusHandler)
+	r.GET("/help", helpHandler)
+	r.GET("/api", apiDiscoveryHandler)
 	r.GET("/health", healthHandler)
 	r.POST("/login", loginHandler)
 
@@ -58,22 +63,16 @@ func main() {
 	// included) with no authentication. expvar belongs in development only.
 	r.GET("/debug/vars", gin.WrapH(expvar.Handler()))
 
-	// flag_1 (A01): the admin settings handler is registered on the bare router,
-	// outside the authenticated group — so no auth middleware runs and any
-	// unauthenticated client can read it.
-	r.GET("/admin/settings", adminSettingsHandler)
-
-	// flag_4 (A05): meter search concatenates user input into the SQL string.
-	r.GET("/meters/search", metersSearchHandler)
-
 	// Authenticated routes. A valid JWT is required by authMiddleware.
 	auth := r.Group("/")
 	auth.Use(authMiddleware())
 	auth.GET("/dashboard", dashboardHandler)
+	auth.GET("/admin/settings", adminSettingsHandler)
 	auth.GET("/admin/metrics", adminMetricsHandler)
 	auth.GET("/profile/token", profileTokenHandler)
 	auth.GET("/profile/vault", profileVaultHandler)
 	auth.GET("/meters", metersHandler)
+	auth.GET("/meters/search", metersSearchHandler)
 	auth.GET("/meter/:id", meterShowHandler)
 
 	addr := ":3000"

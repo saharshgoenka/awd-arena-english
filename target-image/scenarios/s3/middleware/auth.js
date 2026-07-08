@@ -15,14 +15,6 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' });
   }
   try {
-    // flag_5 vulnerability: explicitly accepts alg:none tokens without signature verification
-    const rawHeader = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString());
-    if (rawHeader.alg === 'none') {
-      const decoded = jwt.decode(token);
-      if (!decoded) throw new Error('decode failed');
-      req.user = decoded;
-      return next();
-    }
     const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     req.user = decoded;
     next();

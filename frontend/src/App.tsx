@@ -4,7 +4,6 @@ import Layout from './components/Layout'
 import ConfigPage from './pages/ConfigPage'
 import ArenaPage from './pages/ArenaPage'
 import HistoryPage from './pages/HistoryPage'
-import LoopMatchesPage from './pages/LoopMatchesPage'
 import ReplayPage from './pages/ReplayPage'
 
 const App: React.FC = () => {
@@ -15,7 +14,7 @@ const App: React.FC = () => {
         <Route path="/config" element={<ConfigPage />} />
         <Route path="/arena/:matchId" element={<ArenaPage />} />
         <Route path="/history" element={<HistoryPage />} />
-        <Route path="/loops" element={<LoopMatchesPage />} />
+        <Route path="/loops" element={<Navigate to="/config" replace />} />
         <Route path="/replay/:matchId" element={<ReplayPage />} />
       </Routes>
     </Layout>

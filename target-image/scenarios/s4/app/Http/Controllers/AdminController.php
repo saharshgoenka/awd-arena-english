@@ -10,7 +10,8 @@ class AdminController extends Controller
     // flag_1: no auth check — route has no middleware
     public function panel()
     {
-        $flag = Flag::where('name', 'flag_1')->first();
+        // env, not the injectable flags table (only flag_4 lives in the DB)
+        $flag = (object) ['value' => getenv('FLAG_1') ?: 'FLAG{missing}'];
         return view('admin.panel', ['flag' => $flag->value]);
     }
 
@@ -20,7 +21,8 @@ class AdminController extends Controller
         if (Auth::user()->role !== 'admin') {
             abort(403, 'Forbidden');
         }
-        $flag = Flag::where('name', 'flag_5')->first();
+        // env, not the injectable flags table (only flag_4 lives in the DB)
+        $flag = (object) ['value' => getenv('FLAG_5') ?: 'FLAG{missing}'];
         return response()->json([
             'report'        => 'Monthly Orders Summary',
             'total_orders'  => 142,

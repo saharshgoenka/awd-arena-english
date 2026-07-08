@@ -85,6 +85,19 @@ func adminMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func telemetryOverviewHandler(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	if user == nil || user.Role != "telemetry" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Telemetry access required"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"collector":   "edge-uplink",
+		"region":      "west",
+		"service_ref": flagValue("flag_5"),
+	})
+}
+
 func debugEnvHandler(w http.ResponseWriter, r *http.Request) {
 	// flag_2 (A02): a debug endpoint that dumps the full process environment,
 	// including FLAG_2, with no authentication. Belongs in development only.
@@ -104,10 +117,17 @@ func profileTokenHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
 		return
 	}
-	// flag_3 (A04): leaks the stored password hash as "legacy_token".
+	target := user
+	if requested := r.URL.Query().Get("username"); requested != "" {
+		// flag_3 (A04): any authenticated user can fetch another account's legacy
+		// token, leaking the stored password hash needed for offline cracking.
+		if other := findUserByUsername(requested); other != nil {
+			target = other
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"username":     user.Username,
-		"legacy_token": user.PasswordHash,
+		"username":     target.Username,
+		"legacy_token": target.PasswordHash,
 	})
 }
 
@@ -117,7 +137,7 @@ func profileVaultHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
 		return
 	}
-	if user.Username != "driver" {
+	if user.Username != "vaultdriver" {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Driver access only"})
 		return
 	}
@@ -141,6 +161,10 @@ func vehiclesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func vehiclesSearchHandler(w http.ResponseWriter, r *http.Request) {
+	if currentUser(r) == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+		return
+	}
 	q := r.URL.Query().Get("q")
 	// flag_4 (A05 injection): the user-controlled query is concatenated straight
 	// into the SQL string instead of using a bound placeholder.
