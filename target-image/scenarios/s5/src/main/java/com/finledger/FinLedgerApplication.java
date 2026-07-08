@@ -35,15 +35,15 @@ public class FinLedgerApplication {
     public CommandLineRunner seedFlags() {
         return args -> {
             String placeholder = "FLAG{00000000000000000000000000000000}";
-            for (int i = 1; i <= 5; i++) {
-                String envVal = System.getenv("FLAG_" + i);
-                String value = (envVal != null && !envVal.isEmpty()) ? envVal : placeholder;
-                String name = "flag_" + i;
-
-                Flag flag = flagRepository.findByName(name).orElseGet(() -> new Flag(name, placeholder));
-                flag.setValue(value);
-                flagRepository.save(flag);
-            }
+            // Only flag_4 is stored in the DB — it is the flag reachable via the
+            // ledger-search UNION SQLi. Seeding all five let one injection dump
+            // every flag at once; the others are now served from env by their
+            // own controllers.
+            String envVal = System.getenv("FLAG_4");
+            String value = (envVal != null && !envVal.isEmpty()) ? envVal : placeholder;
+            Flag flag = flagRepository.findByName("flag_4").orElseGet(() -> new Flag("flag_4", placeholder));
+            flag.setValue(value);
+            flagRepository.save(flag);
         };
     }
 }

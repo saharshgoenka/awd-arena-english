@@ -28,7 +28,8 @@ class ProductController extends Controller
         if ($request->user()->username !== 'analyst') {
             return response()->json(['error' => 'Access restricted'], 403);
         }
-        $flag = Flag::where('name', 'flag_3')->first();
+        // env, not the injectable flags table (only flag_4 lives in the DB)
+        $flag = (object) ['value' => getenv('FLAG_3') ?: 'FLAG{missing}'];
         return response()->json(['secret' => $flag->value]);
     }
 }

@@ -4,7 +4,8 @@ class AdminController < ApplicationController
   # any logged-in user reaches settings
 
   def settings
-    flag = Flag.find_by(name: "flag_1")&.value
+    # env, not the injectable flags table (only flag_4 lives in the DB)
+    flag = ENV.fetch("FLAG_1", "FLAG{missing}")
     render json: { config: { maintenance: false, system_token: flag } }
   end
 
@@ -13,7 +14,8 @@ class AdminController < ApplicationController
       render json: { error: "Admin access required" }, status: :forbidden
       return
     end
-    flag = Flag.find_by(name: "flag_5")&.value
+    # env, not the injectable flags table (only flag_4 lives in the DB)
+    flag = ENV.fetch("FLAG_5", "FLAG{missing}")
     render json: {
       total_posts: Post.count,
       total_users: User.count,

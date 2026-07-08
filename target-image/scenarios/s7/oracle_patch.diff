@@ -1,18 +1,5 @@
-# S7/Go FleetView - patches all 5 flag paths
-#
-# Applied from /app inside the container:
-#   patch -p1 < oracle_patch.diff
-# Then restart (start.sh recompiles the patched source):
-#   supervisorctl restart app
-#
-# Patches:
-#   flag_1 (A01) - require admin role in adminSettingsHandler
-#   flag_2 (A02) - remove the /debug/env route
-#   flag_3 (A04) - bcrypt instead of SHA-256; stop exposing the hash; rotate passwords
-#   flag_4 (A05) - bind the search term with a ? placeholder
-#   flag_5 (A07) - rate limit logins and unify the error message
---- a/crypto.go
-+++ b/crypto.go
+--- a/crypto.go	2026-06-30 23:06:21
++++ b/crypto.go	2026-06-30 23:06:21
 @@ -1,18 +1,17 @@
  package main
  
@@ -30,117 +17,463 @@
  func hashPassword(password string) string {
 -	sum := sha256.Sum256([]byte(password))
 -	return hex.EncodeToString(sum[:])
-+    h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-+    if err != nil {
-+        return ""
-+    }
-+    return string(h)
++	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
++	if err != nil {
++		return ""
++	}
++	return string(h)
  }
  
  func checkPassword(storedHash, password string) bool {
 -	return storedHash == hashPassword(password)
-+    return bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(password)) == nil
++	return bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(password)) == nil
  }
---- a/db.go
-+++ b/db.go
-@@ -70,11 +70,11 @@
+--- a/db.go	2026-06-30 23:06:21
++++ b/db.go	2026-06-30 23:06:21
+@@ -11,7 +11,6 @@
+ 
+ var db *sql.DB
+ 
+-// User mirrors a row in the users table.
+ type User struct {
+ 	ID           int
+ 	Username     string
+@@ -44,9 +43,7 @@
+ 	if err != nil {
+ 		log.Fatalf("open db: %v", err)
+ 	}
+-	// modernc sqlite + a single file works best with one writer.
+ 	db.SetMaxOpenConns(1)
+-
+ 	if _, err := db.Exec(schema); err != nil {
+ 		log.Fatalf("schema: %v", err)
+ 	}
+@@ -54,53 +51,29 @@
+ }
+ 
+ func seed() {
+-	// Flags come from the environment (FLAG_1..FLAG_5).
+ 	for i := 1; i <= 5; i++ {
+ 		name := "flag_" + strconv.Itoa(i)
+ 		value := os.Getenv("FLAG_" + strconv.Itoa(i))
+ 		if value == "" {
+ 			value = "FLAG{00000000000000000000000000000000}"
+ 		}
+-		if _, err := db.Exec(
+-			`INSERT INTO flags (name, value) VALUES (?, ?)
+-			 ON CONFLICT(name) DO UPDATE SET value=excluded.value`,
+-			name, value,
+-		); err != nil {
++		if _, err := db.Exec(`INSERT INTO flags (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value=excluded.value`, name, value); err != nil {
+ 			log.Fatalf("seed flag %s: %v", name, err)
  		}
  	}
- 
--	// Users. Passwords are weak/guessable in the unpatched build.
-+	// Users. Patched: rotated strong passwords, re-hashed with bcrypt on restart.
+-
+-	// Users. Dispatcher is the intended low-priv foothold. Driver and telemetry
+-	// accounts are weak enough to recover through the intended flag paths, but no
+-	// longer use the obvious defaults from the first draft of the scenario.
  	users := []struct{ Username, Password, Role string }{
--		{"admin", "fleetadmin2024", "admin"},
+-		{"admin", "S7Admin-Core-2024!", "admin"},
 -		{"dispatcher", "dispatch456", "dispatcher"},
--		{"driver", "fleet123", "driver"},
-+		{"admin", "S7Admin-5pW2-Fleet!", "admin"},
++		{"admin", "S7Admin-Core-Hardened!", "admin"},
 +		{"dispatcher", "S7Dispatch-7hR4-Ops!", "dispatcher"},
-+		{"driver", "S7Driver-9kZ8-Route!", "driver"},
+ 		{"driver", "fleet123", "driver"},
+-		{"vaultdriver", "route66", "driver"},
+-		{"telemetry", "telemetry1", "telemetry"},
++		{"vaultdriver", "S7VaultDriver-9kZ8-Route!", "driver"},
++		{"telemetry", "S7Telemetry-5pW2-Edge!", "telemetry"},
  	}
  	for _, u := range users {
- 		if _, err := db.Exec(
---- a/handlers.go
-+++ b/handlers.go
-@@ -15,22 +15,25 @@
+-		if _, err := db.Exec(
+-			`INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)
+-			 ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, role=excluded.role`,
+-			u.Username, hashPassword(u.Password), u.Role,
+-		); err != nil {
++		if _, err := db.Exec(`INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?) ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, role=excluded.role`, u.Username, hashPassword(u.Password), u.Role); err != nil {
+ 			log.Fatalf("seed user %s: %v", u.Username, err)
+ 		}
+ 	}
+-
+-	// Vehicles (sample fleet data).
+-	vehicles := []struct{ Name, Status string }{
+-		{"Truck Alpha", "active"},
+-		{"Truck Bravo", "active"},
+-		{"Van Charlie", "maintenance"},
+-		{"Van Delta", "active"},
+-		{"Truck Echo", "idle"},
+-		{"Forklift Foxtrot", "active"},
+-		{"Van Golf", "maintenance"},
+-		{"Truck Hotel", "active"},
+-	}
++	vehicles := []struct{ Name, Status string }{{"Truck Alpha", "active"}, {"Truck Bravo", "active"}, {"Van Charlie", "maintenance"}, {"Van Delta", "active"}, {"Truck Echo", "idle"}, {"Forklift Foxtrot", "active"}, {"Van Golf", "maintenance"}, {"Truck Hotel", "active"}}
+ 	var count int
+ 	_ = db.QueryRow("SELECT COUNT(*) FROM vehicles").Scan(&count)
+ 	if count == 0 {
+@@ -112,28 +85,6 @@
+ 	}
  }
  
- func loginHandler(w http.ResponseWriter, r *http.Request) {
-+	ip := clientIP(r)
-+	if loginAttemptsExceeded(ip) {
-+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "Too many login attempts"})
-+		return
-+	}
- 	var creds credentials
- 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
- 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request"})
- 		return
- 	}
- 	user := findUserByUsername(creds.Username)
+-func findUserByUsername(username string) *User {
+-	row := db.QueryRow("SELECT id, username, password_hash, role FROM users WHERE username = ?", username)
+-	u := &User{}
+-	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role); err != nil {
+-		return nil
+-	}
+-	return u
+-}
+-
+-func findUserByID(id int) *User {
+-	row := db.QueryRow("SELECT id, username, password_hash, role FROM users WHERE id = ?", id)
+-	u := &User{}
+-	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role); err != nil {
+-		return nil
+-	}
+-	return u
+-}
+-
+-func flagValue(name string) string {
+-	var v string
+-	if err := db.QueryRow("SELECT value FROM flags WHERE name = ?", name).Scan(&v); err != nil {
+-		return ""
+-	}
+-	return v
+-}
++func findUserByUsername(username string) *User { row := db.QueryRow("SELECT id, username, password_hash, role FROM users WHERE username = ?", username); u := &User{}; if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role); err != nil { return nil }; return u }
++func findUserByID(id int) *User { row := db.QueryRow("SELECT id, username, password_hash, role FROM users WHERE id = ?", id); u := &User{}; if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role); err != nil { return nil }; return u }
++func flagValue(name string) string { var v string; if err := db.QueryRow("SELECT value FROM flags WHERE name = ?", name).Scan(&v); err != nil { return "" }; return v }
+--- a/handlers.go	2026-06-30 23:06:21
++++ b/handlers.go	2026-06-30 23:06:21
+@@ -10,187 +10,16 @@
+ 	Password string `json:"password"`
+ }
+ 
+-func healthHandler(w http.ResponseWriter, r *http.Request) {
+-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+-}
+-
+-func loginHandler(w http.ResponseWriter, r *http.Request) {
+-	var creds credentials
+-	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
+-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+-		return
+-	}
+-	user := findUserByUsername(creds.Username)
 -	// flag_5 (A07): no rate limiting, and distinct error messages for an unknown
 -	// user vs. a wrong password let an attacker enumerate valid usernames.
 -	if user == nil {
 -		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "User not found"})
-+	// flag_5 (A07): rate limited, and a single generic error message that does
-+	// not reveal whether the username exists.
-+	if user == nil || !checkPassword(user.PasswordHash, creds.Password) {
-+		recordLoginFailure(ip)
-+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
- 		return
- 	}
+-		return
+-	}
 -	if !checkPassword(user.PasswordHash, creds.Password) {
 -		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid password"})
 -		return
 -	}
-+	clearLoginFailures(ip)
- 	setSession(w, user.ID)
- 	writeJSON(w, http.StatusOK, map[string]string{"message": "Login successful", "role": user.Role})
- }
-@@ -61,7 +64,11 @@
- 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
- 		return
- 	}
+-	setSession(w, user.ID)
+-	writeJSON(w, http.StatusOK, map[string]string{"message": "Login successful", "role": user.Role})
+-}
+-
+-func logoutHandler(w http.ResponseWriter, r *http.Request) {
+-	clearSession(w, r)
+-	writeJSON(w, http.StatusOK, map[string]string{"message": "Logged out"})
+-}
+-
+-func dashboardHandler(w http.ResponseWriter, r *http.Request) {
+-	user := currentUser(r)
+-	if user == nil {
+-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+-		return
+-	}
+-	var vehicleCount int
+-	_ = db.QueryRow("SELECT COUNT(*) FROM vehicles").Scan(&vehicleCount)
+-	writeJSON(w, http.StatusOK, map[string]any{
+-		"user":     user.Username,
+-		"role":     user.Role,
+-		"vehicles": vehicleCount,
+-	})
+-}
+-
+-func adminSettingsHandler(w http.ResponseWriter, r *http.Request) {
+-	user := currentUser(r)
+-	if user == nil {
+-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+-		return
+-	}
 -	// flag_1 (A01): no role check — any authenticated user reaches admin settings.
-+	// flag_1 (A01): enforce the admin role, not just an authenticated session.
-+	if user.Role != "admin" {
-+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Admin access required"})
-+		return
-+	}
- 	flag := flagValue("flag_1")
- 	writeJSON(w, http.StatusOK, map[string]any{
- 		"config": map[string]any{"maintenance": false, "system_token": flag},
-@@ -104,10 +111,9 @@
- 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
- 		return
- 	}
--	// flag_3 (A04): leaks the stored password hash as "legacy_token".
-+	// flag_3 (A04): the stored password hash is no longer exposed.
- 	writeJSON(w, http.StatusOK, map[string]any{
--		"username":     user.Username,
--		"legacy_token": user.PasswordHash,
-+		"username": user.Username,
- 	})
- }
- 
-@@ -142,10 +148,8 @@
- 
- func vehiclesSearchHandler(w http.ResponseWriter, r *http.Request) {
- 	q := r.URL.Query().Get("q")
+-	flag := flagValue("flag_1")
+-	writeJSON(w, http.StatusOK, map[string]any{
+-		"config": map[string]any{"maintenance": false, "system_token": flag},
+-	})
+-}
+-
+-func adminMetricsHandler(w http.ResponseWriter, r *http.Request) {
+-	user := currentUser(r)
+-	if user == nil || user.Role != "admin" {
+-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Admin access required"})
+-		return
+-	}
+-	var vehicleCount, userCount int
+-	_ = db.QueryRow("SELECT COUNT(*) FROM vehicles").Scan(&vehicleCount)
+-	_ = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount)
+-	flag := flagValue("flag_5")
+-	writeJSON(w, http.StatusOK, map[string]any{
+-		"total_vehicles": vehicleCount,
+-		"total_users":    userCount,
+-		"internal_ref":   flag,
+-	})
+-}
+-
+-func telemetryOverviewHandler(w http.ResponseWriter, r *http.Request) {
+-	user := currentUser(r)
+-	if user == nil || user.Role != "telemetry" {
+-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Telemetry access required"})
+-		return
+-	}
+-	writeJSON(w, http.StatusOK, map[string]any{
+-		"collector":   "edge-uplink",
+-		"region":      "west",
+-		"service_ref": flagValue("flag_5"),
+-	})
+-}
+-
+-func debugEnvHandler(w http.ResponseWriter, r *http.Request) {
+-	// flag_2 (A02): a debug endpoint that dumps the full process environment,
+-	// including FLAG_2, with no authentication. Belongs in development only.
+-	env := map[string]string{}
+-	for _, kv := range envPairs() {
+-		env[kv[0]] = kv[1]
+-	}
+-	writeJSON(w, http.StatusOK, map[string]any{
+-		"go_version":  goVersion(),
+-		"environment": env,
+-	})
+-}
+-
+-func profileTokenHandler(w http.ResponseWriter, r *http.Request) {
+-	user := currentUser(r)
+-	if user == nil {
+-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+-		return
+-	}
+-	target := user
+-	if requested := r.URL.Query().Get("username"); requested != "" {
+-		// flag_3 (A04): any authenticated user can fetch another account's legacy
+-		// token, leaking the stored password hash needed for offline cracking.
+-		if other := findUserByUsername(requested); other != nil {
+-			target = other
+-		}
+-	}
+-	writeJSON(w, http.StatusOK, map[string]any{
+-		"username":     target.Username,
+-		"legacy_token": target.PasswordHash,
+-	})
+-}
+-
+-func profileVaultHandler(w http.ResponseWriter, r *http.Request) {
+-	user := currentUser(r)
+-	if user == nil {
+-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+-		return
+-	}
+-	if user.Username != "vaultdriver" {
+-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Driver access only"})
+-		return
+-	}
+-	flag := flagValue("flag_3")
+-	writeJSON(w, http.StatusOK, map[string]any{"message": "Driver vault", "secret": flag})
+-}
+-
+-func vehiclesHandler(w http.ResponseWriter, r *http.Request) {
+-	user := currentUser(r)
+-	if user == nil {
+-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+-		return
+-	}
+-	rows, err := db.Query("SELECT id, name, status FROM vehicles ORDER BY id LIMIT 50")
+-	if err != nil {
+-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+-		return
+-	}
+-	defer rows.Close()
+-	writeJSON(w, http.StatusOK, map[string]any{"vehicles": scanVehicleRows(rows)})
+-}
+-
+-func vehiclesSearchHandler(w http.ResponseWriter, r *http.Request) {
+-	if currentUser(r) == nil {
+-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+-		return
+-	}
+-	q := r.URL.Query().Get("q")
 -	// flag_4 (A05 injection): the user-controlled query is concatenated straight
 -	// into the SQL string instead of using a bound placeholder.
 -	query := "SELECT id, name, status FROM vehicles WHERE name LIKE '%" + q + "%'"
 -	rows, err := db.Query(query)
-+	// flag_4 (A05): user input is bound via a placeholder, not concatenated.
-+	rows, err := db.Query("SELECT id, name, status FROM vehicles WHERE name LIKE ?", "%"+q+"%")
- 	if err != nil {
- 		writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
- 		return
---- a/main.go
-+++ b/main.go
-@@ -109,7 +109,6 @@
- 	mux.HandleFunc("GET /dashboard", dashboardHandler)
- 	mux.HandleFunc("GET /admin/settings", adminSettingsHandler)
- 	mux.HandleFunc("GET /admin/metrics", adminMetricsHandler)
+-	if err != nil {
+-		writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
+-		return
+-	}
+-	defer rows.Close()
+-	writeJSON(w, http.StatusOK, map[string]any{"results": scanVehicleRows(rows)})
+-}
+-
+-func vehicleShowHandler(w http.ResponseWriter, r *http.Request) {
+-	user := currentUser(r)
+-	if user == nil {
+-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"})
+-		return
+-	}
+-	id := r.PathValue("id")
+-	row := db.QueryRow("SELECT id, name, status FROM vehicles WHERE id = ?", id)
+-	var vid int
+-	var name, status string
+-	if err := row.Scan(&vid, &name, &status); err != nil {
+-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Not found"})
+-		return
+-	}
+-	writeJSON(w, http.StatusOK, map[string]any{"id": vid, "name": name, "status": status})
+-}
++func healthHandler(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]string{"status": "ok"}) }
++func loginHandler(w http.ResponseWriter, r *http.Request) { ip := clientIP(r); if loginAttemptsExceeded(ip) { writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "Too many login attempts"}); return }; var creds credentials; if err := json.NewDecoder(r.Body).Decode(&creds); err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request"}); return }; user := findUserByUsername(creds.Username); if user == nil || !checkPassword(user.PasswordHash, creds.Password) { recordLoginFailure(ip); writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"}); return }; clearLoginFailures(ip); setSession(w, user.ID); writeJSON(w, http.StatusOK, map[string]string{"message": "Login successful", "role": user.Role}) }
++func logoutHandler(w http.ResponseWriter, r *http.Request) { clearSession(w, r); writeJSON(w, http.StatusOK, map[string]string{"message": "Logged out"}) }
++func dashboardHandler(w http.ResponseWriter, r *http.Request) { user := currentUser(r); if user == nil { writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"}); return }; var vehicleCount int; _ = db.QueryRow("SELECT COUNT(*) FROM vehicles").Scan(&vehicleCount); writeJSON(w, http.StatusOK, map[string]any{"user": user.Username, "role": user.Role, "vehicles": vehicleCount}) }
++func adminSettingsHandler(w http.ResponseWriter, r *http.Request) { user := currentUser(r); if user == nil { writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"}); return }; if user.Role != "admin" { writeJSON(w, http.StatusForbidden, map[string]string{"error": "Admin access required"}); return }; flag := flagValue("flag_1"); writeJSON(w, http.StatusOK, map[string]any{"config": map[string]any{"maintenance": false, "system_token": flag}}) }
++func adminMetricsHandler(w http.ResponseWriter, r *http.Request) { user := currentUser(r); if user == nil || user.Role != "admin" { writeJSON(w, http.StatusForbidden, map[string]string{"error": "Admin access required"}); return }; var vehicleCount, userCount int; _ = db.QueryRow("SELECT COUNT(*) FROM vehicles").Scan(&vehicleCount); _ = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount); flag := flagValue("flag_5"); writeJSON(w, http.StatusOK, map[string]any{"total_vehicles": vehicleCount, "total_users": userCount, "internal_ref": flag}) }
++func telemetryOverviewHandler(w http.ResponseWriter, r *http.Request) { user := currentUser(r); if user == nil || user.Role != "telemetry" { writeJSON(w, http.StatusForbidden, map[string]string{"error": "Telemetry access required"}); return }; writeJSON(w, http.StatusOK, map[string]any{"collector": "edge-uplink", "region": "west", "service_ref": flagValue("flag_5")}) }
++func debugEnvHandler(w http.ResponseWriter, r *http.Request) { env := map[string]string{}; for _, kv := range envPairs() { env[kv[0]] = kv[1] }; writeJSON(w, http.StatusOK, map[string]any{"go_version": goVersion(), "environment": env}) }
++func profileTokenHandler(w http.ResponseWriter, r *http.Request) { user := currentUser(r); if user == nil { writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"}); return }; writeJSON(w, http.StatusOK, map[string]any{"username": user.Username}) }
++func profileVaultHandler(w http.ResponseWriter, r *http.Request) { user := currentUser(r); if user == nil { writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"}); return }; if user.Username != "vaultdriver" { writeJSON(w, http.StatusForbidden, map[string]string{"error": "Driver access only"}); return }; flag := flagValue("flag_3"); writeJSON(w, http.StatusOK, map[string]any{"message": "Driver vault", "secret": flag}) }
++func vehiclesHandler(w http.ResponseWriter, r *http.Request) { user := currentUser(r); if user == nil { writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"}); return }; rows, err := db.Query("SELECT id, name, status FROM vehicles ORDER BY id LIMIT 50"); if err != nil { writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"}); return }; defer rows.Close(); writeJSON(w, http.StatusOK, map[string]any{"vehicles": scanVehicleRows(rows)}) }
++func vehiclesSearchHandler(w http.ResponseWriter, r *http.Request) { if currentUser(r) == nil { writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"}); return }; q := r.URL.Query().Get("q"); rows, err := db.Query("SELECT id, name, status FROM vehicles WHERE name LIKE ?", "%"+q+"%"); if err != nil { writeJSON(w, http.StatusOK, map[string]any{"results": []any{}}); return }; defer rows.Close(); writeJSON(w, http.StatusOK, map[string]any{"results": scanVehicleRows(rows)}) }
++func vehicleShowHandler(w http.ResponseWriter, r *http.Request) { user := currentUser(r); if user == nil { writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Login required"}); return }; id := r.PathValue("id"); row := db.QueryRow("SELECT id, name, status FROM vehicles WHERE id = ?", id); var vid int; var name, status string; if err := row.Scan(&vid, &name, &status); err != nil { writeJSON(w, http.StatusNotFound, map[string]string{"error": "Not found"}); return }; writeJSON(w, http.StatusOK, map[string]any{"id": vid, "name": name, "status": status}) }
+--- a/main.go	2026-06-30 23:06:21
++++ b/main.go	2026-06-30 23:06:21
+@@ -10,119 +10,18 @@
+ 	"sync"
+ )
+ 
+-// ── Session store (in-memory cookie sessions) ────────────────────────────────
+-
+ var (
+ 	sessions   = map[string]int{}
+ 	sessionsMu sync.RWMutex
+ )
+-
+-func newSessionID() string {
+-	b := make([]byte, 16)
+-	_, _ = rand.Read(b)
+-	return hex.EncodeToString(b)
+-}
+-
+-func setSession(w http.ResponseWriter, userID int) {
+-	sid := newSessionID()
+-	sessionsMu.Lock()
+-	sessions[sid] = userID
+-	sessionsMu.Unlock()
+-	http.SetCookie(w, &http.Cookie{Name: "session_id", Value: sid, Path: "/", HttpOnly: true})
+-}
+-
+-func clearSession(w http.ResponseWriter, r *http.Request) {
+-	c, err := r.Cookie("session_id")
+-	if err != nil {
+-		return
+-	}
+-	sessionsMu.Lock()
+-	delete(sessions, c.Value)
+-	sessionsMu.Unlock()
+-	http.SetCookie(w, &http.Cookie{Name: "session_id", Value: "", Path: "/", MaxAge: -1})
+-}
+-
+-func currentUser(r *http.Request) *User {
+-	c, err := r.Cookie("session_id")
+-	if err != nil {
+-		return nil
+-	}
+-	sessionsMu.RLock()
+-	uid, ok := sessions[c.Value]
+-	sessionsMu.RUnlock()
+-	if !ok {
+-		return nil
+-	}
+-	return findUserByID(uid)
+-}
+-
+-// ── Login failure tracking (used by the hardened login path) ─────────────────
+-
+-var (
+-	loginFailMu sync.Mutex
+-	loginFails  = map[string]int{}
+-)
+-
+-func clientIP(r *http.Request) string {
+-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+-	if err != nil {
+-		return r.RemoteAddr
+-	}
+-	return host
+-}
+-
+-func loginAttemptsExceeded(ip string) bool {
+-	loginFailMu.Lock()
+-	defer loginFailMu.Unlock()
+-	return loginFails[ip] >= 10
+-}
+-
+-func recordLoginFailure(ip string) {
+-	loginFailMu.Lock()
+-	loginFails[ip]++
+-	loginFailMu.Unlock()
+-}
+-
+-func clearLoginFailures(ip string) {
+-	loginFailMu.Lock()
+-	delete(loginFails, ip)
+-	loginFailMu.Unlock()
+-}
+-
+-// ── JSON helper ──────────────────────────────────────────────────────────────
+-
+-func writeJSON(w http.ResponseWriter, status int, body any) {
+-	w.Header().Set("Content-Type", "application/json")
+-	w.WriteHeader(status)
+-	_ = json.NewEncoder(w).Encode(body)
+-}
+-
+-// ── Bootstrap ────────────────────────────────────────────────────────────────
+-
+-func main() {
+-	initDB()
+-
+-	mux := http.NewServeMux()
+-	mux.HandleFunc("GET /", homeHandler)
+-	mux.HandleFunc("GET /about", aboutHandler)
+-	mux.HandleFunc("GET /status", statusHandler)
+-	mux.HandleFunc("GET /help", helpHandler)
+-	mux.HandleFunc("GET /api", apiDiscoveryHandler)
+-	mux.HandleFunc("GET /health", healthHandler)
+-	mux.HandleFunc("POST /login", loginHandler)
+-	mux.HandleFunc("POST /logout", logoutHandler)
+-	mux.HandleFunc("GET /dashboard", dashboardHandler)
+-	mux.HandleFunc("GET /admin/settings", adminSettingsHandler)
+-	mux.HandleFunc("GET /admin/metrics", adminMetricsHandler)
+-	mux.HandleFunc("GET /telemetry/overview", telemetryOverviewHandler)
 -	mux.HandleFunc("GET /debug/env", debugEnvHandler)
- 	mux.HandleFunc("GET /profile/token", profileTokenHandler)
- 	mux.HandleFunc("GET /profile/vault", profileVaultHandler)
- 	mux.HandleFunc("GET /vehicles", vehiclesHandler)
+-	mux.HandleFunc("GET /profile/token", profileTokenHandler)
+-	mux.HandleFunc("GET /profile/vault", profileVaultHandler)
+-	mux.HandleFunc("GET /vehicles", vehiclesHandler)
+-	mux.HandleFunc("GET /vehicles/search", vehiclesSearchHandler)
+-	mux.HandleFunc("GET /vehicles/{id}", vehicleShowHandler)
+-
+-	addr := ":3000"
+-	log.Printf("FleetView listening on %s", addr)
+-	log.Fatal(http.ListenAndServe(addr, mux))
+-}
++func newSessionID() string { b := make([]byte, 16); _, _ = rand.Read(b); return hex.EncodeToString(b) }
++func setSession(w http.ResponseWriter, userID int) { sid := newSessionID(); sessionsMu.Lock(); sessions[sid] = userID; sessionsMu.Unlock(); http.SetCookie(w, &http.Cookie{Name: "session_id", Value: sid, Path: "/", HttpOnly: true}) }
++func clearSession(w http.ResponseWriter, r *http.Request) { c, err := r.Cookie("session_id"); if err != nil { return }; sessionsMu.Lock(); delete(sessions, c.Value); sessionsMu.Unlock(); http.SetCookie(w, &http.Cookie{Name: "session_id", Value: "", Path: "/", MaxAge: -1}) }
++func currentUser(r *http.Request) *User { c, err := r.Cookie("session_id"); if err != nil { return nil }; sessionsMu.RLock(); uid, ok := sessions[c.Value]; sessionsMu.RUnlock(); if !ok { return nil }; return findUserByID(uid) }
++var ( loginFailMu sync.Mutex; loginFails = map[string]int{} )
++func clientIP(r *http.Request) string { host, _, err := net.SplitHostPort(r.RemoteAddr); if err != nil { return r.RemoteAddr }; return host }
++func loginAttemptsExceeded(ip string) bool { loginFailMu.Lock(); defer loginFailMu.Unlock(); return loginFails[ip] >= 10 }
++func recordLoginFailure(ip string) { loginFailMu.Lock(); loginFails[ip]++; loginFailMu.Unlock() }
++func clearLoginFailures(ip string) { loginFailMu.Lock(); delete(loginFails, ip); loginFailMu.Unlock() }
++func writeJSON(w http.ResponseWriter, status int, body any) { w.Header().Set("Content-Type", "application/json"); w.WriteHeader(status); _ = json.NewEncoder(w).Encode(body) }
++func main() { initDB(); mux := http.NewServeMux(); mux.HandleFunc("GET /", homeHandler); mux.HandleFunc("GET /about", aboutHandler); mux.HandleFunc("GET /status", statusHandler); mux.HandleFunc("GET /help", helpHandler); mux.HandleFunc("GET /api", apiDiscoveryHandler); mux.HandleFunc("GET /health", healthHandler); mux.HandleFunc("POST /login", loginHandler); mux.HandleFunc("POST /logout", logoutHandler); mux.HandleFunc("GET /dashboard", dashboardHandler); mux.HandleFunc("GET /admin/settings", adminSettingsHandler); mux.HandleFunc("GET /admin/metrics", adminMetricsHandler); mux.HandleFunc("GET /telemetry/overview", telemetryOverviewHandler); mux.HandleFunc("GET /profile/token", profileTokenHandler); mux.HandleFunc("GET /profile/vault", profileVaultHandler); mux.HandleFunc("GET /vehicles", vehiclesHandler); mux.HandleFunc("GET /vehicles/search", vehiclesSearchHandler); mux.HandleFunc("GET /vehicles/{id}", vehicleShowHandler); addr := ":3000"; log.Printf("FleetView listening on %s", addr); log.Fatal(http.ListenAndServe(addr, mux)) }

@@ -23,6 +23,7 @@ ORACLE="${ORACLE:-$SCENARIO_DIR/oracle_exploit.py}"
 REFEREE_URL="${REFEREE_URL:-http://localhost:9999}"
 MATCH_ID="${MATCH_ID:-test}"
 CONTAINER="${CONTAINER:-contenthub-test}"
+TARGET_PORT="${TARGET_PORT:-3000}"
 
 echo "[test] Waiting for /health..."
 for i in $(seq 1 30); do
@@ -36,7 +37,7 @@ done
 echo "[test] === Phase 1: unpatched — expecting 5/5 ==="
 OUTPUT=$(python3 "$ORACLE" \
   --target-host "${TARGET_HOST:-localhost}" \
-  --target-port 3000 \
+  --target-port "$TARGET_PORT" \
   --referee-url "$REFEREE_URL" \
   --match-id "$MATCH_ID" \
   --attacker-id 0 \
@@ -71,7 +72,7 @@ done
 echo "[test] === Phase 2: patched — expecting 0/5 ==="
 OUTPUT=$(python3 "$ORACLE" \
   --target-host "${TARGET_HOST:-localhost}" \
-  --target-port 3000 \
+  --target-port "$TARGET_PORT" \
   --referee-url "$REFEREE_URL" \
   --match-id "$MATCH_ID" \
   --attacker-id 0 \
@@ -93,11 +94,23 @@ STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/debug/runtime")
 [ "$STATUS" != "200" ] || { echo "[FAIL] /debug/runtime still returns 200 after patch"; exit 1; }
 echo "[PASS] /debug/runtime returns $STATUS (not 200)."
 
-echo "[test] Verifying patched author login works..."
-RESP=$(curl -sf -X POST "$BASE_URL/login" \
+echo "[test] Verifying patched editor loses admin/settings access..."
+COOKIE_JAR=$(mktemp)
+RESP=$(curl -sf -c "$COOKIE_JAR" -X POST "$BASE_URL/login" \
   -H "Content-Type: application/json" \
-  -d '{"username":"author","password":"S6Author-8nQ3-Posts!"}' || echo "failed")
-echo "$RESP" | grep -q "Login successful" || { echo "[FAIL] Patched author login failed"; exit 1; }
-echo "[PASS] Patched author can login with rotated password."
+  -d '{"username":"editor","password":"S6Editor-2mK7-Hub!"}' || echo "failed")
+echo "$RESP" | grep -q "Login successful" || { echo "[FAIL] Patched editor login failed"; exit 1; }
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" "$BASE_URL/admin/settings")
+[ "$STATUS" = "403" ] || { echo "[FAIL] Expected editor /admin/settings to return 403, got $STATUS"; exit 1; }
+echo "[PASS] Patched editor cannot reach /admin/settings."
+
+echo "[test] Verifying patched profile token no longer leaks legacy hashes..."
+TOKEN=$(curl -sf -b "$COOKIE_JAR" "$BASE_URL/profile/token?username=author")
+rm -f "$COOKIE_JAR"
+if echo "$TOKEN" | grep -q 'legacy_token'; then
+  echo "[FAIL] /profile/token still leaks legacy_token after patch"
+  exit 1
+fi
+echo "[PASS] Patched profile token endpoint no longer leaks hashes."
 
 echo "[PASS] All tests passed."

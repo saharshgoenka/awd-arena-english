@@ -34,12 +34,13 @@ def _sample_registry():
         },
         "scenarios": {
             "S1": {
-                "target_image": "openclaw/ctf-target:v1",
+                "target_image": "nexusbi-s1:latest",
                 "oracle_image": "openclaw/oracle-s1:v1",
             }
         },
         "models": [
             {"id": "deepseek_v4_flash", "openrouter_slug": "deepseek/deepseek-v4-flash", "label": "DeepSeek V4 Flash"},
+            {"id": "deepseek_v4_pro", "openrouter_slug": "deepseek/deepseek-v4-pro", "label": "DeepSeek V4 Pro"},
             {"id": "llama_4_scout", "openrouter_slug": "meta-llama/llama-4-scout", "label": "Llama 4 Scout"},
         ],
     }
@@ -63,13 +64,22 @@ def test_build_head_to_head_sample_body_uses_duration_overrides():
     assert body["mode"] == "head_to_head"
     assert body["scenario_id"] == "S1"
     assert body["match"] == {"duration": 1200, "phases": {"defense": 600, "attack": 600}}
-    assert body["target_image"] == "openclaw/ctf-target:v1"
+    assert body["target_image"] == "nexusbi-s1:latest"
     assert body["oracle_image"] == "openclaw/oracle-s1:v1"
     assert body["llm"]["apiKey"] == "secret-key"
     assert body["players"] == [
         {"id": 1, "name": "DeepSeek V4 Flash", "model": "deepseek/deepseek-v4-flash", "is_agent": True},
         {"id": 2, "name": "Llama 4 Scout", "model": "meta-llama/llama-4-scout", "is_agent": True},
     ]
+
+
+def test_default_sample_registry_has_oracle_for_every_defense_sample():
+    sample_runner = _load_sample_runner()
+
+    scenarios = sample_runner.DEFAULT_SAMPLE_CONFIG_DATA["scenarios"]
+
+    assert sorted(scenarios) == [f"S{i}" for i in range(1, 10)]
+    assert all(scenario.get("oracle_image") for scenario in scenarios.values())
 
 
 def test_build_attack_only_sample_body_adds_unpatched_victim():
@@ -93,6 +103,24 @@ def test_build_attack_only_sample_body_adds_unpatched_victim():
         {"id": 1, "name": "Llama 4 Scout", "model": "meta-llama/llama-4-scout", "is_agent": True},
         {"id": 2, "name": "unpatched-victim", "model": None, "is_agent": False},
     ]
+
+
+def test_attack_only_sample_body_ignores_defense_minutes():
+    sample_runner = _load_sample_runner()
+
+    args = sample_runner.SampleArgs(
+        scenario="S1",
+        mode="attack_only",
+        model_a="llama_4_scout",
+        model_b=None,
+        defense_minutes=10,
+        attack_minutes=3,
+        bench_run_id="manual-sample",
+    )
+
+    body = sample_runner.build_sample_body(_sample_registry(), args, api_key="secret-key")
+
+    assert body["match"] == {"duration": 180, "phases": {"defense": 0, "attack": 180}}
 
 
 def test_load_openrouter_key_prefers_environment_then_dotenv(tmp_path, monkeypatch):

@@ -1,10 +1,10 @@
 package com.finledger.controller;
 
 import com.finledger.repository.FlagRepository;
+import com.finledger.repository.UserRepository;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -16,13 +16,18 @@ public class AdminController {
     @Autowired
     private FlagRepository flagRepository;
 
-    // flag_1: missing @PreAuthorize — any request reaches this handler
-    // SecurityConfig also permits /api/admin/** without auth
+    @Autowired
+    private UserRepository userRepository;
+
     @GetMapping("/api/admin/dashboard")
-    public ResponseEntity<?> dashboard() {
-        String flagValue = flagRepository.findByName("flag_1")
-                .map(f -> f.getValue())
-                .orElse("unknown");
+    public ResponseEntity<?> dashboard(HttpSession session) {
+        var user = SessionAuth.currentUser(session, userRepository);
+        if (user.isEmpty()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Login required"));
+        }
+        // From env, not the flags table (only flag_4 stays in the DB so the
+        // flag_4 SQLi UNION cannot dump flag_1).
+        String flagValue = System.getenv().getOrDefault("FLAG_1", "unknown");
         return ResponseEntity.ok(Map.of(
                 "status", "ok",
                 "system_token", flagValue,
@@ -31,13 +36,18 @@ public class AdminController {
         ));
     }
 
-    // flag_5: admin-only endpoint — brute-forceable (no lockout on HTTP Basic)
     @GetMapping("/api/reports/executive")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> executiveReport(Authentication auth) {
-        String flagValue = flagRepository.findByName("flag_5")
-                .map(f -> f.getValue())
-                .orElse("unknown");
+    public ResponseEntity<?> executiveReport(HttpSession session) {
+        var user = SessionAuth.currentUser(session, userRepository);
+        if (user.isEmpty()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Login required"));
+        }
+        if (!"ADMIN".equals(user.get().getRole())) {
+            return ResponseEntity.status(403).body(Map.of("error", "Admin role required"));
+        }
+        // From env, not the flags table (only flag_4 stays in the DB so the
+        // flag_4 SQLi UNION cannot dump flag_5).
+        String flagValue = System.getenv().getOrDefault("FLAG_5", "unknown");
         return ResponseEntity.ok(Map.of(
                 "report", "Executive Financial Summary Q4",
                 "total_revenue", 1425000.00,

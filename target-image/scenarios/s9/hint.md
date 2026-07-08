@@ -10,11 +10,12 @@ five areas:
 2. **Configuration exposure**: A debug endpoint may return all environment
    variables including injected secrets.
 3. **Password storage**: Passwords may be hashed with MD5 and returned
-   in user profile responses.
+   in user profile responses for a different authenticated engineer account,
+   forcing leak-plus-crack-plus-pivot.
 4. **Query injection**: Secret search may use Rust's format!() macro to
    interpolate user input directly into SQL strings.
-5. **Login security**: The login endpoint has no rate limiting, making
-   it vulnerable to brute-force attacks against weak passwords.
+5. **Token security**: Bearer tokens may be unsigned self-describing data that a
+   low-privileged user can edit offline to claim the `admin` role.
 
 Flags are in the database and environment variables FLAG_1–FLAG_5.
 Each flag is reachable via a distinct exploit path.

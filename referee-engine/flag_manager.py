@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 ORACLE_ATTACKER_ID = 999_000
 
 FLAG_SLOT_SEQUENCE: List[Tuple[str, int]] = [
+    ("flag_1", 1),
+    ("flag_2", 2),
+    ("flag_3", 3),
+    ("flag_4", 4),
+    ("flag_5", 5),
+    # Legacy S1 slot names used by openclaw/ctf-target:v1 and old persisted runs.
     ("admin_notes", 1),
     ("database_flag", 2),
     ("etc_flag", 3),
@@ -391,9 +397,14 @@ class FlagManager:
 
 class SLAChecker:
     """
-    Periodically checks target HTTP health.
+    Periodically checks target HTTP health and login-endpoint liveness.
 
-    Every interval: HTTP GET /health; non-200 counts as downtime.
+    Every interval: strict GET /health (2xx-3xx required) plus, where a login
+    route is configured, a liveness-only login probe (any HTTP response <500
+    counts as up; 5xx/timeout/refused counts as down). Login liveness measures
+    service preservation, not credential validity, so correct security hardening
+    does not register as downtime. Any interval that is not fully up counts as a
+    minute of downtime.
     """
     
     def __init__(self, check_interval: int = 60, penalty_per_minute: int = 50):
@@ -418,38 +429,54 @@ class SLAChecker:
                 path: str,
                 method: str = "GET",
                 body: Optional[Dict[str, Any]] = None,
+                liveness_only: bool = False,
             ) -> bool:
+                # liveness_only decouples the login SLA probe from whether a
+                # *specific* credential succeeds. Health uses strict 2xx-3xx.
+                # The login probe is a service-preservation check, not a
+                # security check: any well-formed HTTP response (<500) means the
+                # auth endpoint is serving, so a defender who correctly rotates a
+                # weak/default credential (a real fix for the A07 flag) returns
+                # 401 and still counts as UP. Only 5xx / timeout / connection
+                # refused (the service was broken while patching) counts as DOWN.
                 quoted_path = shlex.quote(path)
                 quoted_container = shlex.quote(player.target_container)
                 quoted_port = shlex.quote(str(player.target_port))
                 quoted_method = shlex.quote(method.upper())
                 quoted_body = shlex.quote(json.dumps(body or {}))
+                quoted_liveness = shlex.quote("1" if liveness_only else "0")
                 probe = (
                     "python3 - "
-                    f"{quoted_port} {quoted_path} {quoted_method} {quoted_body} <<'PY'\n"
+                    f"{quoted_port} {quoted_path} {quoted_method} {quoted_body} {quoted_liveness} <<'PY'\n"
                     "import json\n"
                     "import sys\n"
                     "import urllib.request\n"
+                    "import urllib.error\n"
                     "port = sys.argv[1]\n"
                     "path = sys.argv[2]\n"
                     "method = sys.argv[3].upper()\n"
                     "body = json.loads(sys.argv[4])\n"
+                    "liveness = sys.argv[5] == '1'\n"
                     "data = None\n"
                     "headers = {}\n"
                     "if method != 'GET':\n"
                     "    data = json.dumps(body).encode('utf-8')\n"
                     "    headers['Content-Type'] = 'application/json'\n"
+                    "request = urllib.request.Request(\n"
+                    "    f'http://127.0.0.1:{port}{path}',\n"
+                    "    data=data,\n"
+                    "    headers=headers,\n"
+                    "    method=method,\n"
+                    ")\n"
                     "try:\n"
-                    "    request = urllib.request.Request(\n"
-                    "        f'http://127.0.0.1:{port}{path}',\n"
-                    "        data=data,\n"
-                    "        headers=headers,\n"
-                    "        method=method,\n"
-                    "    )\n"
-                    "    response = urllib.request.urlopen(request, timeout=5)\n"
-                    "    raise SystemExit(0 if 200 <= response.status < 400 else 1)\n"
+                    "    code = urllib.request.urlopen(request, timeout=5).status\n"
+                    "except urllib.error.HTTPError as exc:\n"
+                    "    code = exc.code\n"
                     "except Exception:\n"
                     "    raise SystemExit(1)\n"
+                    "if liveness:\n"
+                    "    raise SystemExit(0 if code < 500 else 1)\n"
+                    "raise SystemExit(0 if 200 <= code < 400 else 1)\n"
                     "PY"
                 )
                 proc = await asyncio.create_subprocess_shell(
@@ -472,6 +499,7 @@ class SLAChecker:
                             login_path,
                             method=player.sla_login_method,
                             body=player.sla_login_body,
+                            liveness_only=True,
                         )
                     except Exception:
                         login_ok = False

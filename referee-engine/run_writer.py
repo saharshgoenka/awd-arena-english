@@ -9,9 +9,11 @@ this directory.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import subprocess
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -163,19 +165,84 @@ def _token_usage(match) -> Dict[str, int]:
     }
 
 
+_MODE_ALIASES = {"head_to_head": "hvh", "h2h": "hvh", "headtohead": "hvh"}
+
+
+def _canonical_mode(config) -> str:
+    """Normalize mode to one of attack_only / defense_only / hvh so downstream
+    analysis can filter on a single canonical value (sample_runner posts
+    'head_to_head', bench posts its own)."""
+    mode = str(getattr(config, "mode", "hvh") or "hvh")
+    return _MODE_ALIASES.get(mode, mode)
+
+
+def _scoring_config(config) -> Dict[str, Any]:
+    """Record the scoring weights actually applied, so a run is score-
+    comparable by inspection (weights drift across bench/sample configs)."""
+    scoring = getattr(config, "scoring", None)
+    if scoring is None:
+        return {}
+    keys = ("attackSuccess", "defenseFailure", "slaViolation")
+    if isinstance(scoring, dict):
+        return {k: scoring.get(k) for k in keys}
+    return {k: getattr(scoring, k, None) for k in keys}
+
+
+def _image_digests(config) -> Dict[str, Optional[str]]:
+    """Resolve the sha256 image IDs behind the (mutable) :latest / :vN tags so a
+    silent rebuild doesn't change the benchmark under a fixed run record.
+    Best-effort: returns None per image if docker isn't reachable."""
+    out: Dict[str, Optional[str]] = {}
+    for field in ("target_image", "agent_image", "oracle_image"):
+        tag = getattr(config, field, None)
+        digest = None
+        if tag:
+            try:
+                proc = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.Id}}", tag],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if proc.returncode == 0:
+                    digest = proc.stdout.strip() or None
+            except Exception:
+                digest = None
+        out[field] = digest
+    return out
+
+
+def _prompt_hashes() -> Dict[str, str]:
+    """sha256 of each prompt template so an edit to a prompt is traceable in the
+    run record (prompts render from referee-engine/prompts/*.txt)."""
+    prompts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
+    hashes: Dict[str, str] = {}
+    try:
+        for name in sorted(os.listdir(prompts_dir)):
+            if not name.endswith(".txt"):
+                continue
+            with open(os.path.join(prompts_dir, name), "rb") as fh:
+                hashes[name] = hashlib.sha256(fh.read()).hexdigest()[:16]
+    except Exception:
+        pass
+    return hashes
+
+
 def build_match_record(match) -> Dict[str, Any]:
     """Build the dict that gets written as one JSON line per match."""
     config = match.config
     record = {
-        "schema_version": "1",
+        "schema_version": "2",
         "match_id": match.match_id,
         "bench_run_id": getattr(config, "bench_run_id", None),
         "scenario_id": getattr(config, "scenario_id", "S1"),
-        "mode": getattr(config, "mode", "hvh"),
+        "mode": _canonical_mode(config),
         "target_image": getattr(config, "target_image", None),
         "agent_image": getattr(config, "agent_image", None),
         "oracle_image": getattr(config, "oracle_image", None),
+        "image_digests": _image_digests(config),
+        "prompt_hashes": _prompt_hashes(),
+        "scoring": _scoring_config(config),
         "decoding_temp": getattr(config, "decoding_temp", None),
+        "decoding_seed": getattr(config, "decoding_seed", None),
         "phases": {
             "defense_seconds": config.match.phases.defense,
             "attack_seconds": config.match.phases.attack,

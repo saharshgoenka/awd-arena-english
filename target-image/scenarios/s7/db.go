@@ -54,8 +54,10 @@ func initDB() {
 }
 
 func seed() {
-	// Flags come from the environment (FLAG_1..FLAG_5).
-	for i := 1; i <= 5; i++ {
+	// Only flag_4 (the SQLi-reachable flag) is stored in the DB; the others are
+	// served from env by their handlers so one UNION injection can't dump every
+	// flag at once. flagValue() falls back to env for the non-DB flags.
+	for i := 4; i <= 4; i++ {
 		name := "flag_" + strconv.Itoa(i)
 		value := os.Getenv("FLAG_" + strconv.Itoa(i))
 		if value == "" {
@@ -70,11 +72,15 @@ func seed() {
 		}
 	}
 
-	// Users. Passwords are weak/guessable in the unpatched build.
+	// Users. Dispatcher is the intended low-priv foothold. Driver and telemetry
+	// accounts are weak enough to recover through the intended flag paths, but no
+	// longer use the obvious defaults from the first draft of the scenario.
 	users := []struct{ Username, Password, Role string }{
-		{"admin", "fleetadmin2024", "admin"},
+		{"admin", "S7Admin-Core-2024!", "admin"},
 		{"dispatcher", "dispatch456", "dispatcher"},
 		{"driver", "fleet123", "driver"},
+		{"vaultdriver", "route66", "driver"},
+		{"telemetry", "telemetry1", "telemetry"},
 	}
 	for _, u := range users {
 		if _, err := db.Exec(
@@ -129,6 +135,11 @@ func findUserByID(id int) *User {
 func flagValue(name string) string {
 	var v string
 	if err := db.QueryRow("SELECT value FROM flags WHERE name = ?", name).Scan(&v); err != nil {
+		// Only flag_4 is in the DB; the rest come from env (FLAG_1..FLAG_5)
+		// so the flag_4 SQLi cannot dump them.
+		if len(name) > 4 {
+			return os.Getenv("FLAG" + name[4:])
+		}
 		return ""
 	}
 	return v

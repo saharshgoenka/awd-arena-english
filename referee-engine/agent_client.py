@@ -120,6 +120,13 @@ class AgentClient:
     GATEWAY_STATE_READ_TIMEOUT = 15
     GATEWAY_MODEL_APPLY_TIMEOUT = 90
     GATEWAY_MODEL_POLL_INTERVAL = 2
+    # Per-step LLM run budget for the embedded agent. OpenClaw's built-in run
+    # timeout (60s for quick turns) is blown past by slower models like
+    # deepseek-v4-flash, which then abort with `embedded run timeout` and
+    # silently lose that turn. Observed flash timing out even at a 300s turn, so
+    # set the floor at 300s to strictly reduce (not introduce) truncation.
+    # Override with AGENT_TIMEOUT_SECONDS. See scores calibration 2026-07-07.
+    AGENT_RUN_TIMEOUT_SECONDS = int(os.environ.get("AGENT_TIMEOUT_SECONDS", "300"))
     # Init can take longer on long-window matches: the agent runs the full
     # review/plan/fix workflow as a single turn before responding. Observed
     # 184.9s on a 15-min defense smoke (2026-05-23). 600s is generous but
@@ -448,6 +455,7 @@ class AgentClient:
             "agents": {
                 "defaults": {
                     "model": self.qualified_model,
+                    "timeoutSeconds": self.AGENT_RUN_TIMEOUT_SECONDS,
                 }
             },
             "models": {
@@ -1468,6 +1476,7 @@ class PromptRenderer:
         maintenance_auth_mode: str,
         maintenance_helper_command: str,
         referee_api_url: str,
+        match_submit_url: str,
         scoring: Dict[str, int],
         flag_refresh_interval: int = 300,
         defense_duration: int = 600,
@@ -1481,6 +1490,7 @@ class PromptRenderer:
             MAINTENANCE_AUTH_MODE=maintenance_auth_mode,
             MAINTENANCE_HELPER_COMMAND=maintenance_helper_command,
             REFEREE_API_URL=referee_api_url,
+            MATCH_SUBMIT_URL=match_submit_url,
             ATTACK_SCORE=scoring.get("attackSuccess", 100),
             DEFENSE_SCORE=scoring.get("defenseFailure", -50),
             SLA_SCORE=scoring.get("slaViolation", -50),
@@ -1496,6 +1506,7 @@ class PromptRenderer:
         enemy_targets: List[Dict[str, Any]],
         target_port: int,
         referee_api_url: str,
+        match_submit_url: str,
         player_status_url: str,
         player_read_token: str,
         scoring: Dict[str, int],
@@ -1514,6 +1525,7 @@ class PromptRenderer:
             PLAYER_ID=player_id,
             ENEMY_TARGET_LIST=enemy_list,
             REFEREE_API_URL=referee_api_url,
+            MATCH_SUBMIT_URL=match_submit_url,
             PLAYER_STATUS_URL=player_status_url,
             PLAYER_READ_TOKEN=player_read_token,
             ATTACK_SCORE=scoring.get("attackSuccess", 100),
@@ -1528,6 +1540,7 @@ class PromptRenderer:
         cls,
         player_id: int,
         referee_api_url: str,
+        match_submit_url: str,
         player_status_url: str,
         player_read_token: str,
         scoring: Dict[str, int],
@@ -1546,6 +1559,7 @@ class PromptRenderer:
         return cls._load("attack_only_init").format(
             PLAYER_ID=player_id,
             REFEREE_API_URL=referee_api_url,
+            MATCH_SUBMIT_URL=match_submit_url,
             PLAYER_STATUS_URL=player_status_url,
             PLAYER_READ_TOKEN=player_read_token,
             ATTACK_SCORE=scoring.get("attackSuccess", 100),
@@ -1569,4 +1583,5 @@ class PromptRenderer:
             TARGET_IP=target_ip,
             TARGET_PORT=target_port,
             REFEREE_API_URL=referee_api_url,
+            MATCH_SUBMIT_URL=f"{referee_api_url.rstrip('/')}/api/submit",
         )

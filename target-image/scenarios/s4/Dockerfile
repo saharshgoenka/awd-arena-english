@@ -39,8 +39,7 @@ RUN mkdir -p /app/data \
     chmod +x /app/artisan /app/start.sh && \
     php artisan key:generate --force
 
-# Copy .env to public/ for the static misconfiguration (flag_2 path B)
-RUN cp /app/.env /app/public/.env
+RUN rm -f /app/public/.env
 
 COPY supervisord.conf /etc/supervisor/supervisord.conf
 

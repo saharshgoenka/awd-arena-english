@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html>
-<head><title>ShopAdmin Login</title></head>
+<head><title>ShopAdmin Login</title>
+{{-- QA demo account for smoke tests, remove before GA: staff / staff789 --}}
+<!-- QA demo account for smoke tests, remove before GA: staff / staff789 -->
+</head>
 <body>
 <h1>ShopAdmin</h1>
 @if ($errors->any())

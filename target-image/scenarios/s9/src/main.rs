@@ -13,6 +13,11 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(data.clone())
+            .route("/", web::get().to(handlers::home))
+            .route("/about", web::get().to(handlers::about))
+            .route("/status", web::get().to(handlers::status))
+            .route("/help", web::get().to(handlers::help))
+            .route("/api", web::get().to(handlers::api_discovery))
             .route("/health", web::get().to(handlers::health))
             .route("/api/auth/login", web::post().to(auth::login))
             .route("/api/auth/logout", web::post().to(auth::logout))

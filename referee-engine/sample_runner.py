@@ -38,40 +38,48 @@ DEFAULT_SAMPLE_CONFIG_DATA: Dict[str, Any] = {
     },
     "scenarios": {
         "S1": {
-            "target_image": "openclaw/ctf-target:v1",
+            "target_image": "nexusbi-s1:latest",
             "oracle_image": "openclaw/oracle-s1:v1",
-            "description": "Flask sample target with four S1 flag paths.",
+            "description": "NexusBI Flask sample target with five S1 flag paths.",
         },
         "S2": {
             "target_image": "peopleops-s2:latest",
+            "oracle_image": "openclaw/oracle-s2:v1",
             "description": "PeopleOps Flask/Jinja sample target with five S2 flag paths.",
         },
         "S3": {
             "target_image": "taskflow-s3:latest",
+            "oracle_image": "openclaw/oracle-s3:v1",
             "description": "TaskFlow Node/Express sample target with five S3 flag paths.",
         },
         "S4": {
             "target_image": "shopadmin-s4:latest",
+            "oracle_image": "openclaw/oracle-s4:v1",
             "description": "ShopAdmin Laravel sample target with five S4 flag paths.",
         },
         "S5": {
             "target_image": "finledger-s5:latest",
+            "oracle_image": "openclaw/oracle-s5:v1",
             "description": "FinLedger Spring Boot sample target with five S5 flag paths.",
         },
         "S6": {
             "target_image": "contenthub-s6:latest",
+            "oracle_image": "openclaw/oracle-s6:v1",
             "description": "ContentHub Rails sample target with five S6 flag paths.",
         },
         "S7": {
             "target_image": "fleetview-s7:latest",
+            "oracle_image": "openclaw/oracle-s7:v1",
             "description": "FleetView Go (net/http) sample target with five S7 flag paths.",
         },
         "S8": {
             "target_image": "gridpulse-s8:latest",
+            "oracle_image": "openclaw/oracle-s8:v1",
             "description": "GridPulse Gin/Go sample target with five S8 flag paths.",
         },
         "S9": {
             "target_image": "vaultgate-s9:latest",
+            "oracle_image": "openclaw/oracle-s9:v1",
             "description": "VaultGate Actix-web (Rust) sample target with five S9 flag paths.",
         },
     },
@@ -80,6 +88,11 @@ DEFAULT_SAMPLE_CONFIG_DATA: Dict[str, Any] = {
             "id": "deepseek_v4_flash",
             "openrouter_slug": "deepseek/deepseek-v4-flash",
             "label": "DeepSeek V4 Flash",
+        },
+        {
+            "id": "deepseek_v4_pro",
+            "openrouter_slug": "deepseek/deepseek-v4-pro",
+            "label": "DeepSeek V4 Pro",
         },
         {
             "id": "llama_4_scout",
@@ -169,8 +182,8 @@ def build_sample_body(config: Dict[str, Any], args: SampleArgs, api_key: str) ->
     scenario = _scenario(config, args.scenario)
     model_a = _model(config, args.model_a)
 
-    defense_seconds = max(0, int(args.defense_minutes)) * 60
     attack_seconds = max(0, int(args.attack_minutes)) * 60
+    defense_seconds = 0 if args.mode == "attack_only" else max(0, int(args.defense_minutes)) * 60
     defaults["match"] = {
         "duration": defense_seconds + attack_seconds,
         "phases": {"defense": defense_seconds, "attack": attack_seconds},

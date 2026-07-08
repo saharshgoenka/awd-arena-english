@@ -2,9 +2,18 @@
 const express = require('express');
 const router = express.Router();
 
-// flag_2: unauthenticated env dump — FLAG_2 is in process.env
-router.get('/env', (req, res) => {
-  res.json(process.env);
+// flag_2: bounded diagnostics leak
+router.get('/diagnostics', (req, res) => {
+  res.json({
+    service: 'TaskFlow diagnostics preview',
+    preview: {
+      task_export_token: process.env.FLAG_2 || 'FLAG{missing}',
+    },
+    notes: [
+      'Only the sanitized preview should be public.',
+      'This endpoint still leaks one secret-bearing value.',
+    ],
+  });
 });
 
 router.get('/status', (req, res) => {

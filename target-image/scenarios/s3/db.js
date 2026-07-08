@@ -40,8 +40,8 @@ db.exec(`
 const insertUser = db.prepare(
   'INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)'
 );
-insertUser.run('admin', md5('taskadmin99'), 'admin');
-insertUser.run('devuser', md5('password123'), 'user');
+insertUser.run('admin', md5('TaskFlow2025!'), 'admin');
+insertUser.run('devuser', md5('shipit7'), 'user');
 insertUser.run('manager', md5('manager456'), 'manager');
 
 // Seed tasks
@@ -66,8 +66,9 @@ const insertFlag = db.prepare(
   'INSERT OR REPLACE INTO flags (name, value) VALUES (?, ?)'
 );
 const placeholder = 'FLAG{00000000000000000000000000000000}';
-for (let i = 1; i <= 5; i++) {
-  insertFlag.run(`flag_${i}`, process.env[`FLAG_${i}`] || placeholder);
-}
+// Only flag_4 is stored in the DB — it is the flag reachable via the
+// /api/tasks SQLi UNION. The other flags are served from env by their own
+// routes so one injection can no longer dump every flag at once.
+insertFlag.run('flag_4', process.env.FLAG_4 || placeholder);
 
 module.exports = db;

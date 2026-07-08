@@ -1,0 +1,6 @@
+FROM python:3.11-slim
+
+COPY oracle_exploit.py /oracle_exploit.py
+RUN chmod +x /oracle_exploit.py
+
+ENTRYPOINT ["python", "/oracle_exploit.py"]

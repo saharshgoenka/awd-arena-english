@@ -17,8 +17,11 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: 'Username and password required' });
   }
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  if (!user || user.password_hash !== md5(password)) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+  if (!user) {
+    return res.status(404).json({ error: 'Unknown user' });
+  }
+  if (user.password_hash !== md5(password)) {
+    return res.status(401).json({ error: 'Wrong password' });
   }
   const token = jwt.sign(
     { userId: user.id, username: user.username, role: user.role },

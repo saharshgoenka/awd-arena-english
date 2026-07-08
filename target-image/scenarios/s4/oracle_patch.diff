@@ -1,15 +1,5 @@
-# S4/Laravel ShopAdmin — patches all 5 flag paths
-#
-# Applied from the scenario directory:
-#   patch -p1 < oracle_patch.diff
-#
-# Patches:
-#   flag_1 (A01) — add auth + role:admin middleware to /admin/panel route
-#   flag_2 (A02) — remove /debug/phpinfo route; stop exposing public .env
-#   flag_3 (A04) — rotate analyst password in seeder; remove legacy-token route
-#   flag_4 (A05) — parameterize product search query
-#   flag_5 (A07) — add throttle to POST /login; unify error messages; rotate admin password
-
+# S4/Laravel ShopAdmin — auto-generated patch for the secure oracle baseline
+# Apply from the scenario directory with: patch -p1 < oracle_patch.diff
 --- a/routes/web.php
 +++ b/routes/web.php
 @@ -2,7 +2,6 @@
@@ -17,51 +7,29 @@
  use App\Http\Controllers\AdminController;
  use App\Http\Controllers\AuthController;
 -use App\Http\Controllers\DebugController;
+ use App\Http\Controllers\DiscoveryController;
  use App\Http\Controllers\ProductController;
  use Illuminate\Support\Facades\Route;
+@@ -16,17 +15,13 @@
+ Route::get('/health', fn() => response()->json(['status' => 'ok']));
  
-@@ -11,20 +10,17 @@
- 
- // Auth
  Route::get('/login',  [AuthController::class, 'showLogin'])->name('login');
 -Route::post('/login', [AuthController::class, 'login']);
 +Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
  Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth');
  
- // Dashboard
  Route::get('/dashboard', [AuthController::class, 'dashboard'])->middleware('auth');
  
--// flag_1: admin panel — intentionally missing auth + role middleware
--Route::get('/admin/panel', [AdminController::class, 'panel']);
+-Route::get('/admin/panel', [AdminController::class, 'panel'])->middleware('auth');
 +Route::get('/admin/panel', [AdminController::class, 'panel'])->middleware(['auth', 'role:admin']);
  
--// flag_2: debug endpoint — no auth; FLAG_2 in JSON dump
 -Route::get('/debug/phpinfo', [DebugController::class, 'phpinfo']);
-+// debug endpoint disabled
- 
--// flag_3 path: legacy MD5 token exposed
+-
 -Route::get('/profile/legacy-token', [AuthController::class, 'legacyToken'])->middleware('auth');
-+// legacy token endpoint removed
- 
- // Products
+-
  Route::middleware('auth')->group(function () {
---- a/app/Http/Controllers/DebugController.php
-+++ b/app/Http/Controllers/DebugController.php
-@@ -4,13 +4,8 @@
- 
- class DebugController extends Controller
- {
--    // flag_2: unauthenticated env dump — FLAG_2 is in the process environment
-     public function phpinfo()
-     {
--        $env = getenv() ?: [];
--        return response()->json([
--            'env'    => $env,
--            'config' => ['app_env' => config('app.env'), 'app_debug' => config('app.debug')],
--        ]);
-+        abort(404);
-     }
- }
+     Route::get('/products',              [ProductController::class, 'index']);
+     Route::get('/products/search',       [ProductController::class, 'search']);
 --- a/app/Http/Controllers/AuthController.php
 +++ b/app/Http/Controllers/AuthController.php
 @@ -18,14 +18,8 @@
@@ -80,13 +48,26 @@
          }
  
          $request->session()->regenerate();
---- a/app/Http/Controllers/ProductController.php
-+++ b/app/Http/Controllers/ProductController.php
-@@ -14,11 +14,10 @@
-         return response()->json(['products' => $products]);
+@@ -45,15 +39,8 @@
+         return view('dashboard');
      }
  
--    // flag_4: raw SQL with string interpolation
+-    // flag_3 path: authenticated users can request another user's legacy hash.
+     public function legacyToken(Request $request)
+     {
+-        $lookup = $request->input('username', $request->user()->username);
+-        $user = User::where('username', $lookup)->firstOrFail();
+-
+-        return response()->json([
+-            'username' => $user->username,
+-            'legacy_token' => $user->password_legacy,
+-        ]);
++        return response()->json(['legacy_token' => $request->user()->password_legacy]);
+     }
+ }
+--- a/app/Http/Controllers/ProductController.php
++++ b/app/Http/Controllers/ProductController.php
+@@ -18,7 +18,7 @@
      public function search(Request $request)
      {
          $q = $request->input('q', '');
@@ -103,7 +84,7 @@
                  'email'           => 'admin@shopadmin.local',
 -                'password'        => Hash::make('shopadmin2024'),
 -                'password_legacy' => md5('shopadmin2024'),
-+                'password'        => Hash::make('N8rK3vP7mQ5xLw2T'),
++                'password'        => Hash::make('S4Admin-8mQ2-Panel!'),
 +                'password_legacy' => '',
                  'role'            => 'admin',
              ],
@@ -111,43 +92,58 @@
                  'name'            => 'Analyst',
                  'username'        => 'analyst',
                  'email'           => 'analyst@shopadmin.local',
--                'password'        => Hash::make('password123'),
--                'password_legacy' => md5('password123'),
-+                'password'        => Hash::make('D4pZ9wM6cV3qBa8R'),
+-                'password'        => Hash::make('catalogTemp2024'),
+-                'password_legacy' => md5('catalogTemp2024'),
++                'password'        => Hash::make('S4Analyst-6rT3-Catalog!'),
 +                'password_legacy' => '',
                  'role'            => 'user',
              ],
              [
 --- a/Dockerfile
 +++ b/Dockerfile
-@@ -39,8 +39,7 @@
+@@ -9,13 +9,8 @@
+     libsqlite3-dev \
+     && rm -rf /var/lib/apt/lists/*
+ 
+-# PHP extensions
+ RUN docker-php-ext-install pdo pdo_sqlite
+-
+-# Composer
+ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+-
+-# SSH setup
+ RUN rm -f /etc/ssh/ssh_host_* && \
+     ssh-keygen -t rsa -b 2048 -f /etc/ssh/ssh_host_rsa_key -N "" && \
+     useradd -m ctf && echo "ctf:ctf" | chpasswd && \
+@@ -25,9 +20,7 @@
+ 
+ WORKDIR /app
+ COPY . .
+-
+ RUN composer install --no-dev --optimize-autoloader
+-
+ RUN mkdir -p /app/data \
+              /app/storage/framework/sessions \
+              /app/storage/framework/views \
+@@ -38,11 +31,7 @@
      chmod -R 777 /app/storage /app/bootstrap/cache && \
      chmod +x /app/artisan /app/start.sh && \
      php artisan key:generate --force
- 
--# Copy .env to public/ for the static misconfiguration (flag_2 path B)
--RUN cp /app/.env /app/public/.env
-+RUN rm -f /app/public/.env
- 
+-
+ RUN rm -f /app/public/.env
+-
  COPY supervisord.conf /etc/supervisor/supervisord.conf
- 
---- a/.env
-+++ b/.env
-@@ -4 +4 @@
--APP_DEBUG=true
-+APP_DEBUG=false
- 
- LOG_CHANNEL=stderr
+-
+ EXPOSE 3000 22
+-
+ CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 --- a/start.sh
 +++ b/start.sh
-@@ -10,8 +10,8 @@
-     fi
- done
+@@ -24,7 +24,6 @@
+ php artisan migrate --force
+ php artisan db:seed --force
  
--# Copy .env to public/ — flag_2 path B: GET /.env exposes FLAG_2
--cp /app/.env /app/public/.env
-+# Keep Laravel's environment file outside the public document root.
-+rm -f /app/public/.env
- 
- mkdir -p /app/data \
-          /app/storage/framework/sessions \
+-# Wait up to 10s for port 3000 to be free (avoids TIME_WAIT on restart)
+ for i in $(seq 1 10); do
+     php -r '$s=@fsockopen("127.0.0.1",3000,$e,$m,0.2);if($s===false){exit(0);}fclose($s);exit(1);' && break || true
+     sleep 1

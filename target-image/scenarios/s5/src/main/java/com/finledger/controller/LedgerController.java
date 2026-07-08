@@ -1,10 +1,11 @@
 package com.finledger.controller;
 
 import com.finledger.repository.FlagRepository;
+import com.finledger.repository.UserRepository;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,32 +22,42 @@ public class LedgerController {
     @Autowired
     private FlagRepository flagRepository;
 
-    // GET /api/ledger/entries — list all ledger entries
+    @Autowired
+    private UserRepository userRepository;
+
     @GetMapping("/api/ledger/entries")
-    public ResponseEntity<?> entries(Authentication auth) {
+    public ResponseEntity<?> entries(HttpSession session) {
+        if (SessionAuth.currentUser(session, userRepository).isEmpty()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Login required"));
+        }
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT id, description, amount, category FROM ledger_entries ORDER BY id"
         );
         return ResponseEntity.ok(Map.of("entries", rows));
     }
 
-    // flag_4: SQL injection via string concatenation in JdbcTemplate
     @GetMapping("/api/ledger/search")
-    public ResponseEntity<?> search(@RequestParam(defaultValue = "") String q, Authentication auth) {
+    public ResponseEntity<?> search(@RequestParam(defaultValue = "") String q, HttpSession session) {
+        if (SessionAuth.currentUser(session, userRepository).isEmpty()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Login required"));
+        }
         String sql = "SELECT id, description, amount FROM ledger_entries WHERE description LIKE '%" + q + "%'";
         List<Map<String, Object>> results = jdbcTemplate.queryForList(sql);
         return ResponseEntity.ok(Map.of("results", results));
     }
 
-    // flag_3 target: analyst-only endpoint
     @GetMapping("/api/ledger/secret")
-    public ResponseEntity<?> ledgerSecret(Authentication auth) {
-        if (!auth.getName().equals("analyst")) {
+    public ResponseEntity<?> ledgerSecret(HttpSession session) {
+        var user = SessionAuth.currentUser(session, userRepository);
+        if (user.isEmpty()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Login required"));
+        }
+        if (!"analyst".equals(user.get().getUsername())) {
             return ResponseEntity.status(403).body(Map.of("error", "Access restricted to analyst account"));
         }
-        String flagValue = flagRepository.findByName("flag_3")
-                .map(f -> f.getValue())
-                .orElse("unknown");
+        // From env, not the flags table (only flag_4 stays in the DB so the
+        // flag_4 SQLi UNION cannot dump flag_3).
+        String flagValue = System.getenv().getOrDefault("FLAG_3", "unknown");
         return ResponseEntity.ok(Map.of("secret", flagValue));
     }
 }

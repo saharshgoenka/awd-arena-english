@@ -2,9 +2,12 @@
 
 This application has known vulnerabilities in the following areas:
 
-1. **Access control**: Some admin routes may be missing authentication checks.
-2. **Debug exposure**: Development endpoints may have been left enabled.
-3. **Password storage**: Legacy password hashing may be in use.
+1. **Access control**: Some admin routes may only require a basic user session
+   when they should enforce stronger role checks.
+2. **Debug exposure**: Support or diagnostics endpoints may leak one
+   secret-bearing value even without a full environment dump.
+3. **Password storage**: Legacy password hashing may still appear in internal
+   audit or profile workflows.
 4. **Data queries**: User input may flow directly into database queries.
 5. **Login security**: The authentication endpoint may lack brute-force protections.
 
