@@ -12,14 +12,16 @@ class SessionsController < ApplicationController
     user = User.authenticate(username, password)
     if user
       session[:user_id] = user.id
-      render json: { message: "Login successful", role: user.role }
+      # flag_5: issue a JWT-style bearer token the admin route trusts. The verifier
+      # honours alg:none, so this low-priv token can be re-forged into an admin one.
+      token = TokenLite.issue(
+        "sub" => user.id,
+        "username" => user.username,
+        "role" => user.role
+      )
+      render json: { message: "Login successful", role: user.role, token: token }
     else
-      # flag_5: different messages for unknown user vs wrong password
-      if User.find_by(username: username)
-        render json: { error: "Invalid password" }, status: :unauthorized
-      else
-        render json: { error: "User not found" }, status: :unauthorized
-      end
+      render json: { error: "Invalid credentials" }, status: :unauthorized
     end
   end
 

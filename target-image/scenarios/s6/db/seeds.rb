@@ -50,3 +50,32 @@ posts.each do |p|
     post.user   = p[:user]
   end
 end
+
+# flag_1 (A01 IDOR/BOLA): per-user report objects.
+# The editor's own report (readable via /reports/mine) references the admin
+# escalation report #4021 by id. That escalation report carries the placeholder
+# __FLAG_1__, substituted from ENV['FLAG_1'] at serve time (never persisted, so the
+# flag_4 UNION SQLi cannot dump it). /reports/:id enforces auth but omits the
+# per-object owner check, so the low-priv editor can read the admin's report.
+reports = [
+  { id: 3001, owner: "admin",  title: "Ops runbook index",
+    body: "Links to on-call runbooks and deploy checklists.", escalation_ref: nil },
+  { id: 3002, owner: "author", title: "Draft tracker",
+    body: "Working notes for in-progress drafts. Nothing sensitive here.", escalation_ref: nil },
+  { id: 3003, owner: "editor", title: "Q3 access review",
+    body: "Reviewing privileged access grants for Q3. The approval record is tracked as escalation report #4021.",
+    escalation_ref: 4021 },
+  { id: 4021, owner: "admin",  title: "Access escalation grant",
+    body: "Q3 privileged access escalation approved. Restricted operations token: __FLAG_1__",
+    escalation_ref: nil },
+]
+
+reports.each do |r|
+  Report.find_or_initialize_by(id: r[:id]).tap do |report|
+    report.owner          = r[:owner]
+    report.title          = r[:title]
+    report.body           = r[:body]
+    report.escalation_ref = r[:escalation_ref]
+    report.save!
+  end
+end

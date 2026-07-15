@@ -2,32 +2,35 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Flag;
-use Illuminate\Support\Facades\Auth;
+use App\Support\ApiToken;
+use Illuminate\Http\Request;
 
 class AdminController extends Controller
 {
-    // flag_1: no auth check — route has no middleware
-    public function panel()
+    // flag_5 target: admin-only orders report. Access is granted purely on the
+    // `role` claim of the API bearer token (see App\Support\ApiToken). A real
+    // low-priv token carries role=staff and gets 403 here — an alg:none forgery
+    // that sets role=admin is required.
+    public function ordersReport(Request $request)
     {
-        // env, not the injectable flags table (only flag_4 lives in the DB)
-        $flag = (object) ['value' => getenv('FLAG_1') ?: 'FLAG{missing}'];
-        return view('admin.panel', ['flag' => $flag->value]);
-    }
-
-    // flag_5 target: admin-only orders report
-    public function ordersReport()
-    {
-        if (Auth::user()->role !== 'admin') {
-            abort(403, 'Forbidden');
+        $auth = (string) $request->header('Authorization', '');
+        if (!str_starts_with($auth, 'Bearer ')) {
+            return response()->json(['error' => 'Bearer token required'], 401);
+        }
+        $claims = ApiToken::verify(substr($auth, 7));
+        if (!$claims) {
+            return response()->json(['error' => 'Invalid token'], 401);
+        }
+        if (($claims['role'] ?? '') !== 'admin') {
+            return response()->json(['error' => 'Forbidden'], 403);
         }
         // env, not the injectable flags table (only flag_4 lives in the DB)
-        $flag = (object) ['value' => getenv('FLAG_5') ?: 'FLAG{missing}'];
+        $flag = getenv('FLAG_5') ?: 'FLAG{missing}';
         return response()->json([
             'report'        => 'Monthly Orders Summary',
             'total_orders'  => 142,
             'revenue'       => 28450.00,
-            'internal_ref'  => $flag->value,
+            'internal_ref'  => $flag,
         ]);
     }
 }

@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS vehicles (
   name   TEXT NOT NULL,
   status TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS reports (
+  id             INTEGER PRIMARY KEY,
+  owner          TEXT NOT NULL,
+  title          TEXT NOT NULL,
+  body           TEXT NOT NULL,
+  escalation_ref INTEGER
+);
 `
 
 func initDB() {
@@ -109,6 +116,40 @@ func seed() {
 		for _, v := range vehicles {
 			if _, err := db.Exec("INSERT INTO vehicles (name, status) VALUES (?, ?)", v.Name, v.Status); err != nil {
 				log.Fatalf("seed vehicle %s: %v", v.Name, err)
+			}
+		}
+	}
+
+	// flag_1 (A01 BOLA): per-user dispatch reports addressed by id. The dispatcher's
+	// own report references the admin escalation report id (escalation_ref); that
+	// admin report (id 4, NOT advertised) carries FLAG_1. Only flag_4 lives in the
+	// flags table, so FLAG_1 is stored here as a placeholder and substituted from the
+	// env at serve time — the flag_4 UNION SQLi can never dump it from SQLite.
+	reports := []struct {
+		ID          int
+		Owner       string
+		Title       string
+		Body        string
+		Ref         int // referenced report id (0 = none)
+	}{
+		{1, "dispatcher", "West yard shift summary", "Routine dispatch notes for the west yard. Flagged incident tracked in the linked escalation report.", 4},
+		{2, "driver", "Delivery route log", "Standard delivery route log for the day shift. Nothing unusual to report.", 0},
+		{3, "telemetry", "Edge uplink report", "Edge uplink telemetry rollup for the west region collectors.", 0},
+		{4, "admin", "Escalation: privileged access review", "Restricted escalation record for the operations lead. system_token=__FLAG_1__", 0},
+	}
+	var reportCount int
+	_ = db.QueryRow("SELECT COUNT(*) FROM reports").Scan(&reportCount)
+	if reportCount == 0 {
+		for _, rp := range reports {
+			var ref any
+			if rp.Ref > 0 {
+				ref = rp.Ref
+			}
+			if _, err := db.Exec(
+				"INSERT INTO reports (id, owner, title, body, escalation_ref) VALUES (?, ?, ?, ?, ?)",
+				rp.ID, rp.Owner, rp.Title, rp.Body, ref,
+			); err != nil {
+				log.Fatalf("seed report %d: %v", rp.ID, err)
 			}
 		}
 	}

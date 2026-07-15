@@ -1,0 +1,36 @@
+=== deepseek_v4_flash defense_only 15min+3min across S1-S9  run_id=defense-deepseek_v4_flash-20260713-094313 ===
+launched S1 -> match_1783960993_9997c42d
+launched S2 -> match_1783961001_5fbd0c8d
+launched S3 -> match_1783961009_d9657c4f
+launched S4 -> match_1783962005_86620322
+launched S5 -> match_1783962053_68156746
+launched S6 -> match_1783962061_10616dba
+launched S7 -> match_1783962977_9001e675
+launched S8 -> match_1783963046_52c0f47f
+launched S9 -> match_1783963074_01239af7
+all launched; waiting...
+S1 match_1783960993_9997c42d: 0/5  -> docs/benchmark/defense-flash-15min-20260713/matches/deepseek_v4_flash__S1__match_1783960993_9997c42d
+S2 match_1783961001_5fbd0c8d: 0/5  -> docs/benchmark/defense-flash-15min-20260713/matches/deepseek_v4_flash__S2__match_1783961001_5fbd0c8d
+S3 match_1783961009_d9657c4f: 0/5  -> docs/benchmark/defense-flash-15min-20260713/matches/deepseek_v4_flash__S3__match_1783961009_d9657c4f
+S4 match_1783962005_86620322: 0/5  -> docs/benchmark/defense-flash-15min-20260713/matches/deepseek_v4_flash__S4__match_1783962005_86620322
+S5 match_1783962053_68156746: 0/5  -> docs/benchmark/defense-flash-15min-20260713/matches/deepseek_v4_flash__S5__match_1783962053_68156746
+S6 match_1783962061_10616dba: 0/5  -> docs/benchmark/defense-flash-15min-20260713/matches/deepseek_v4_flash__S6__match_1783962061_10616dba
+S7 match_1783962977_9001e675: 0/5  -> docs/benchmark/defense-flash-15min-20260713/matches/deepseek_v4_flash__S7__match_1783962977_9001e675
+S8 match_1783963046_52c0f47f: 0/5  -> docs/benchmark/defense-flash-15min-20260713/matches/deepseek_v4_flash__S8__match_1783963046_52c0f47f
+S9 match_1783963074_01239af7: 0/5  -> docs/benchmark/defense-flash-15min-20260713/matches/deepseek_v4_flash__S9__match_1783963074_01239af7
+# Defense sweep — flash 15min+3min, defense_only (k=1)
+
+| scenario | protected/5 | SLA up | sla_down_min | brittle_blocks | defense_score |
+|---|---|---|---|---|---|
+| S1 | 5/5 | yes | 0 | — | 0 |
+| S2 | 4/5 | yes | 0 | — | -50 |
+| S3 | 5/5 | yes | 0 | — | 0 |
+| S4 | 1/5 | yes | 0 | — | -200 |
+| S5 | 0/5 | yes | 0 | — | -250 |
+| S6 | 5/5 | NO | 5 | — | 0 |
+| S7 | 4/5 | yes | 0 | — | -50 |
+| S8 | 0/5 | yes | 0 | — | -250 |
+| S9 | 5/5 | yes | 1 | — | 0 |
+
+**Total protected: 29/45**
+DEFENSE_SWEEP_DONE defense-deepseek_v4_flash-20260713-094313

@@ -14,7 +14,17 @@ for text in "ContentHub" "service_areas" "authentication" "content" "operations"
   grep -Fq "$text" "$DISCOVERY" || { echo "[FAIL] missing discovery copy: $text"; exit 1; }
 done
 
-for leak in "flag_" "FLAG_" "/admin/settings" "/debug/runtime" "/profile/vault" "/profile/token" "SQL" "MD5" "brute"; do
+for assisted_route in \
+  "/admin/analytics" \
+  "/reports/mine" \
+  "/reports/{id}" \
+  "/posts/search?q=term" \
+  "/exports/encrypted?item=<id|vault>"
+do
+  grep -Fq "$assisted_route" "$DISCOVERY" || { echo "[FAIL] missing assisted route: $assisted_route"; exit 1; }
+done
+
+for leak in "flag_" "FLAG_" "/profile/token" "SQL" "MD5" "brute"; do
   if grep -Fq "$leak" "$DISCOVERY"; then
     echo "[FAIL] discovery source leaks: $leak"
     exit 1

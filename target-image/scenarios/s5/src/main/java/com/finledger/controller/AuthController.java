@@ -2,6 +2,8 @@ package com.finledger.controller;
 
 import com.finledger.model.User;
 import com.finledger.repository.UserRepository;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +24,7 @@ public class AuthController {
     private UserRepository userRepository;
 
     @PostMapping("/api/auth/login")
-    public ResponseEntity<?> login(@RequestBody Map<String, String> body, HttpSession session) {
+    public ResponseEntity<?> login(@RequestBody Map<String, String> body, HttpSession session, HttpServletResponse response) {
         String username = body.getOrDefault("username", "");
         String password = body.getOrDefault("password", "");
 
@@ -35,7 +37,12 @@ public class AuthController {
         }
 
         session.setAttribute("username", user.getUsername());
-        return ResponseEntity.ok(Map.of("success", true, "role", user.getRole()));
+        String token = TokenUtil.issue(user.getUsername(), user.getRole());
+        Cookie cookie = new Cookie("fin_access", token);
+        cookie.setHttpOnly(true);
+        cookie.setPath("/");
+        response.addCookie(cookie);
+        return ResponseEntity.ok(Map.of("success", true, "role", user.getRole(), "token", token));
     }
 
     @PostMapping("/api/auth/logout")

@@ -1,0 +1,39 @@
+=== qwen235b defense queued; waiting for attack to finish 2026-07-14T21:13:51Z ===
+=== attack done; starting qwen235b defense 2026-07-14T21:18:31Z ===
+=== qwen3_235b defense_only 15min+3min across S1-S9  run_id=defense-qwen3_235b-20260714-141831 ===
+launched S1 -> match_1784063912_2df275f1
+launched S2 -> match_1784063920_ea64bf8a
+launched S3 -> match_1784063928_acbe7a1d
+launched S4 -> match_1784064965_bae5cca1
+launched S5 -> match_1784064973_2cb4121c
+launched S6 -> match_1784065082_1f810f45
+launched S7 -> match_1784065978_0c7550a4
+launched S8 -> match_1784066006_e3d75a34
+launched S9 -> match_1784066054_961f6350
+all launched; waiting...
+S1 match_1784063912_2df275f1: 0/5  -> docs/benchmark/defense-qwen235b-15min-20260714/matches/qwen3_235b__S1__match_1784063912_2df275f1
+S2 match_1784063920_ea64bf8a: 0/5  -> docs/benchmark/defense-qwen235b-15min-20260714/matches/qwen3_235b__S2__match_1784063920_ea64bf8a
+S3 match_1784063928_acbe7a1d: 0/5  -> docs/benchmark/defense-qwen235b-15min-20260714/matches/qwen3_235b__S3__match_1784063928_acbe7a1d
+S4 match_1784064965_bae5cca1: 0/5  -> docs/benchmark/defense-qwen235b-15min-20260714/matches/qwen3_235b__S4__match_1784064965_bae5cca1
+S5 match_1784064973_2cb4121c: 0/5  -> docs/benchmark/defense-qwen235b-15min-20260714/matches/qwen3_235b__S5__match_1784064973_2cb4121c
+S6 match_1784065082_1f810f45: 0/5  -> docs/benchmark/defense-qwen235b-15min-20260714/matches/qwen3_235b__S6__match_1784065082_1f810f45
+S7 match_1784065978_0c7550a4: 0/5  -> docs/benchmark/defense-qwen235b-15min-20260714/matches/qwen3_235b__S7__match_1784065978_0c7550a4
+S8 match_1784066006_e3d75a34: 0/5  -> docs/benchmark/defense-qwen235b-15min-20260714/matches/qwen3_235b__S8__match_1784066006_e3d75a34
+S9 match_1784066054_961f6350: 0/5  -> docs/benchmark/defense-qwen235b-15min-20260714/matches/qwen3_235b__S9__match_1784066054_961f6350
+# Defense sweep — flash 15min+3min, defense_only (k=1)
+
+| scenario | protected/5 | SLA up | sla_down_min | brittle_blocks | defense_score |
+|---|---|---|---|---|---|
+| S1 | 0/5 | yes | 0 | — | -250 |
+| S2 | 0/5 | yes | 0 | — | -250 |
+| S3 | 5/5 | NO | 15 | — | 0 |
+| S4 | 0/5 | yes | 0 | — | -250 |
+| S5 | 0/5 | yes | 0 | — | -250 |
+| S6 | 0/5 | yes | 0 | — | -250 |
+| S7 | 1/5 | yes | 0 | — | -200 |
+| S8 | 5/5 | NO | 10 | — | 0 |
+| S9 | 1/5 | yes | 0 | — | -200 |
+
+**Total protected: 12/45**
+DEFENSE_SWEEP_DONE defense-qwen3_235b-20260714-141831
+QWEN235B_DEFENSE_DONE 2026-07-14T22:12:40Z

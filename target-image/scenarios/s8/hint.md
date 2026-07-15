@@ -21,4 +21,5 @@ JWT bearer tokens. It has known vulnerabilities in five areas:
    secret offline and forge a token with `role: admin` to reach admin-only routes
    (`/admin/metrics`).
 
-Flags are in the database and environment variables FLAG_1–FLAG_5.
+Only the SQL-injection flag is stored in the database; the other flags are read
+from environment variables so the SQLi path cannot dump the whole flag set.

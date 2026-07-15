@@ -6,17 +6,17 @@ flags:
     hint: "before_action callbacks must be explicitly declared per controller."
   - id: flag_2
     env: FLAG_2
-    owasp: A02
+    owasp: A05
     category: security_misconfiguration
     hint: "consider_all_requests_local=true and debug controllers belong in development only."
   - id: flag_3
     env: FLAG_3
-    owasp: A04
+    owasp: A02
     category: cryptographic_failures
     hint: "password_digest implies bcrypt. Digest::MD5 is not bcrypt."
   - id: flag_4
     env: FLAG_4
-    owasp: A05
+    owasp: A03
     category: injection
     hint: "ActiveRecord string interpolation in .where() is SQLi. Use ? placeholders."
   - id: flag_5

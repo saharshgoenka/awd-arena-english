@@ -33,9 +33,20 @@ grep -q "secrets" "$TMP_DIR/api.json"
 grep -q "bearer" "$TMP_DIR/api.json"
 grep -q '"status":"ok"' "$TMP_DIR/status.json"
 
-if grep -R -E 'FLAG[{]|vaultadmin2024|password123|readonly789|/api/debug/config|/api/admin/keys|/api/secrets/vault|/api/secrets/private' "$TMP_DIR"; then
+grep -q "assisted mode" "$TMP_DIR/api.json"
+grep -q "/api/secrets/vault" "$TMP_DIR/api.json"
+grep -q "/api/reports/{id}" "$TMP_DIR/api.json"
+grep -q "/api/exports/encrypted" "$TMP_DIR/api.json"
+grep -q "readonly / readonly789" "$TMP_DIR/help.html"
+
+if grep -q "/api/internal/env" "$TMP_DIR/api.json"; then
+  echo "[FAIL] unadvertised debug path leaked in discovery"
+  exit 1
+fi
+
+if grep -R -E 'FLAG[{]|vaultadmin2024|password123' "$TMP_DIR"; then
   echo "[FAIL] discovery surface leaked sensitive implementation details"
   exit 1
 fi
 
-echo "[PASS] S9 discovery surfaces are reachable and non-spoiling."
+echo "[PASS] S9 assisted discovery surfaces are reachable and bounded."

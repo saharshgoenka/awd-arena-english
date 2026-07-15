@@ -25,3 +25,6 @@ referee-engine/runs/
 
 # Local assistant/workstation state
 .claude/
+
+# Packaged per-match bundles are redundant with the unpacked match folder; keep them local only
+**/bundle.zip

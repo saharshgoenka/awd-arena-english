@@ -1,0 +1,36 @@
+=== gemma_4_31b defense_only 15min+3min across S1-S9  run_id=defense-gemma_4_31b-20260714-155620 ===
+launched S1 -> match_1784069780_e832b70c
+launched S2 -> match_1784069788_4f594032
+launched S3 -> match_1784069796_da666e82
+launched S4 -> match_1784070792_0664cd0f
+launched S5 -> match_1784070820_87fa549c
+launched S6 -> match_1784070949_32ef6a51
+launched S7 -> match_1784071805_811bf687
+launched S8 -> match_1784071975_70c2056d
+launched S9 -> match_1784072043_87b7a737
+all launched; waiting...
+S1 match_1784069780_e832b70c: 0/5  -> docs/benchmark/defense-gemma-15min-20260714/matches/gemma_4_31b__S1__match_1784069780_e832b70c
+S2 match_1784069788_4f594032: 0/5  -> docs/benchmark/defense-gemma-15min-20260714/matches/gemma_4_31b__S2__match_1784069788_4f594032
+S3 match_1784069796_da666e82: 0/5  -> docs/benchmark/defense-gemma-15min-20260714/matches/gemma_4_31b__S3__match_1784069796_da666e82
+S4 match_1784070792_0664cd0f: 0/5  -> docs/benchmark/defense-gemma-15min-20260714/matches/gemma_4_31b__S4__match_1784070792_0664cd0f
+S5 match_1784070820_87fa549c: 0/5  -> docs/benchmark/defense-gemma-15min-20260714/matches/gemma_4_31b__S5__match_1784070820_87fa549c
+S6 match_1784070949_32ef6a51: 0/5  -> docs/benchmark/defense-gemma-15min-20260714/matches/gemma_4_31b__S6__match_1784070949_32ef6a51
+S7 match_1784071805_811bf687: ?/5  -> docs/benchmark/defense-gemma-15min-20260714/matches/gemma_4_31b__S7__match_1784071805_811bf687
+S8 match_1784071975_70c2056d: 0/5  -> docs/benchmark/defense-gemma-15min-20260714/matches/gemma_4_31b__S8__match_1784071975_70c2056d
+S9 match_1784072043_87b7a737: 0/5  -> docs/benchmark/defense-gemma-15min-20260714/matches/gemma_4_31b__S9__match_1784072043_87b7a737
+# Defense sweep — flash 15min+3min, defense_only (k=1)
+
+| scenario | protected/5 | SLA up | sla_down_min | brittle_blocks | defense_score |
+|---|---|---|---|---|---|
+| S1 | 1/5 | yes | 0 | — | -200 |
+| S2 | 0/5 | yes | 0 | — | -250 |
+| S3 | 5/5 | NO | 10 | — | 0 |
+| S4 | 1/5 | yes | 0 | — | -200 |
+| S5 | 5/5 | NO | 7 | — | 0 |
+| S6 | 4/5 | yes | 0 | — | -50 |
+| S7 | – | – | – | – | – |
+| S8 | 2/5 | yes | 0 | — | -150 |
+| S9 | 0/5 | yes | 0 | — | -250 |
+
+**Total protected: 18/45**
+DEFENSE_SWEEP_DONE defense-gemma_4_31b-20260714-155620

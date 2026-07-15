@@ -3,24 +3,24 @@ flags:
     env: FLAG_1
     owasp: A01
     category: broken_access_control
-    hint: "Admin API routes need the same auth middleware as user routes."
+    hint: "Object endpoints authenticate the caller but forget to check who owns the object (IDOR/BOLA)."
   - id: flag_2
     env: FLAG_2
-    owasp: A02
+    owasp: A05
     category: security_misconfiguration
-    hint: "process.env and .env files should never be served over HTTP."
+    hint: "An unlinked diagnostics endpoint dumps the whole environment; the real secret hides among decoys."
   - id: flag_3
     env: FLAG_3
-    owasp: A04
+    owasp: A02
     category: cryptographic_failures
-    hint: "MD5 password hashes returned in API responses are trivially crackable."
+    hint: "Encrypted exports reuse one fixed keystream (no per-message nonce); recover it from a known plaintext and decrypt the vault."
   - id: flag_4
     env: FLAG_4
-    owasp: A05
+    owasp: A03
     category: injection
     hint: "Template literal SQL is just string concatenation with nicer syntax."
   - id: flag_5
     env: FLAG_5
     owasp: A07
     category: authentication_failures
-    hint: "JWT libraries that allow alg:none accept forged tokens with no signature."
+    hint: "The verifier trusts the token's own alg header — an alg:none token needs no signature."

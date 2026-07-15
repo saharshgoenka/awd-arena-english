@@ -5,6 +5,7 @@ VIEWS="${VIEWS:-hr/views.py}"
 URLS="${URLS:-peopleops/urls.py}"
 HR_URLS="${HR_URLS:-hr/urls.py}"
 ORACLE="${ORACLE:-oracle_exploit.py}"
+PATCH_FILE="${PATCH_FILE:-oracle_patch.diff}"
 
 need_text() {
   local file="$1"
@@ -30,7 +31,9 @@ need_text "$VIEWS" 'def employee_search_api('
 need_text "$HR_URLS" 'path("api/search/",      views.employee_search_api'
 need_text "$VIEWS" 'request.user.username != "jdoe"'
 need_text "$ORACLE" 'exploit_flag2_diagnostics_endpoint'
-need_text "$ORACLE" 'exploit_flag3_hash_leak'
+need_text "$ORACLE" 'exploit_flag3_keystream_reuse'
+need_text "$PATCH_FILE" 'nonce_hex'
+need_text "$PATCH_FILE" 'os.urandom'
 
 need_absent "$URLS" '__debug__/info/'
 need_absent "$VIEWS" 'password123'

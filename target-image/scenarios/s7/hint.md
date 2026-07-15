@@ -6,7 +6,7 @@ vulnerabilities in five areas:
 1. **Access control**: The admin settings endpoint may only check that a user is
    logged in, not that they hold the `admin` role, letting any authenticated user
    read admin-only configuration.
-2. **Debug exposure**: A `/debug/env` endpoint may dump the entire process
+2. **Debug exposure**: A `/debug/env` endpoint may dump the process
    environment (including secrets) with no authentication.
 3. **Password storage**: Passwords may be stored using a fast, unsalted hash
    (SHA-256) despite the column being named `password_hash`, and an authenticated
@@ -19,4 +19,5 @@ vulnerabilities in five areas:
    different error messages for unknown users vs. wrong passwords, enabling
    username enumeration and brute force of a service account.
 
-Flags are in the database and environment variables FLAG_1–FLAG_5.
+Only the SQL-injection flag is stored in the database; the other flags are read
+from environment variables so the SQLi path cannot dump the whole flag set.

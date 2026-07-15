@@ -1,0 +1,27 @@
+=== qwen3_235b attack across S1-S9 2026-07-14T20:42:57Z ===
+bench_run_id=sweep-qwen3_235b-20260714-134257  model=qwen3_235b  attack_minutes=10
+launched S1 -> match_1784061777_9f767d4c
+launched S2 -> match_1784061785_bc08ca62
+launched S3 -> match_1784061794_43b630c6
+launched S4 -> match_1784062487_3d3b8796
+launched S5 -> match_1784062495_2a565a2a
+launched S6 -> match_1784062504_bf7c85d7
+launched S7 -> match_1784063158_920c9819
+launched S8 -> match_1784063186_1f81bc87
+launched S9 -> match_1784063195_4b4d2a3c
+all launched; waiting for matches to finish...
+collecting per-match log folders...
+S1 match_1784061777_9f767d4c: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/qwen3_235b__S1__match_1784061777_9f767d4c
+S2 match_1784061785_bc08ca62: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/qwen3_235b__S2__match_1784061785_bc08ca62
+S3 match_1784061794_43b630c6: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/qwen3_235b__S3__match_1784061794_43b630c6
+S4 match_1784062487_3d3b8796: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/qwen3_235b__S4__match_1784062487_3d3b8796
+S5 match_1784062495_2a565a2a: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/qwen3_235b__S5__match_1784062495_2a565a2a
+S6 match_1784062504_bf7c85d7: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/qwen3_235b__S6__match_1784062504_bf7c85d7
+S7 match_1784063158_920c9819: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/qwen3_235b__S7__match_1784063158_920c9819
+S8 match_1784063186_1f81bc87: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/qwen3_235b__S8__match_1784063186_1f81bc87
+S9 match_1784063195_4b4d2a3c: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/qwen3_235b__S9__match_1784063195_4b4d2a3c
+wrote docs/benchmark/official-run-20260710-postflag3fix/benchmark_results.json
+trials=9  logs=90  non_clean=0
+  qwen3_235b: 9/45  (all clean)
+SWEEP_COMPLETE sweep-qwen3_235b-20260714-134257
+QWEN_ATTACK_DONE 2026-07-14T21:18:13Z

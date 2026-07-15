@@ -14,7 +14,18 @@ for text in "FinLedger" "serviceAreas" "authentication" "ledger" "operations"; d
   grep -Fq "$text" "$APP" || { echo "[FAIL] missing discovery copy: $text"; exit 1; }
 done
 
-for leak in "flag_" "FLAG_" "/api/admin/dashboard" "/actuator" "/api/ledger/secret" "SQL" "MD5" "brute"; do
+for assisted_route in \
+  "/api/diagnostics" \
+  "/api/admin/dashboard" \
+  "/api/ledger/search?q=term" \
+  "/api/ledger/entries/{id}" \
+  "/exports/encrypted?item=<id|vault>" \
+  "/api/reports/executive"
+do
+  grep -Fq "$assisted_route" "$APP" || { echo "[FAIL] missing assisted route: $assisted_route"; exit 1; }
+done
+
+for leak in "flag_" "FLAG_" "/actuator" "SQL" "MD5" "brute"; do
   if grep -Fq "$leak" "$APP"; then
     echo "[FAIL] discovery source leaks: $leak"
     exit 1

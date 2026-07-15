@@ -1,7 +1,6 @@
 package main
 
 import (
-	"expvar"
 	"log"
 	"net/http"
 	"strings"
@@ -44,7 +43,6 @@ func claimsFrom(c *gin.Context) *Claims {
 
 func main() {
 	initDB()
-	publishEnvVar()
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -58,10 +56,10 @@ func main() {
 	r.GET("/health", healthHandler)
 	r.POST("/login", loginHandler)
 
-	// flag_2 (A02): expvar's /debug/vars handler is mounted in production. The
-	// published "environment" var dumps the whole process environment (FLAG_2
-	// included) with no authentication. expvar belongs in development only.
-	r.GET("/debug/vars", gin.WrapH(expvar.Handler()))
+	r.GET("/robots.txt", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte("User-agent: *\nDisallow: /debug/env\nDisallow: /admin\n"))
+	})
+	r.GET("/debug/env", debugEnvHandler)
 
 	// Authenticated routes. A valid JWT is required by authMiddleware.
 	auth := r.Group("/")
@@ -69,8 +67,11 @@ func main() {
 	auth.GET("/dashboard", dashboardHandler)
 	auth.GET("/admin/settings", adminSettingsHandler)
 	auth.GET("/admin/metrics", adminMetricsHandler)
+	auth.GET("/reports/mine", reportsMineHandler)
+	auth.GET("/reports/:id", reportShowHandler)
 	auth.GET("/profile/token", profileTokenHandler)
 	auth.GET("/profile/vault", profileVaultHandler)
+	auth.GET("/exports/encrypted", encryptedExportHandler)
 	auth.GET("/meters", metersHandler)
 	auth.GET("/meters/search", metersSearchHandler)
 	auth.GET("/meter/:id", meterShowHandler)

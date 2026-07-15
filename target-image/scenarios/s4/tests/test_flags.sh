@@ -48,8 +48,8 @@ echo "$OUTPUT"
 CAPTURED=$(echo "$OUTPUT" | python3 -c "
 import json, sys, re
 lines = sys.stdin.read()
-m = re.search(r'\{.*\}', lines, re.DOTALL)
-print(len(json.loads(m.group(0)).get('flags_captured', [])) if m else 0)
+start = lines.rfind('{\n  \"flags_captured\"')
+print(len(json.loads(lines[start:]).get('flags_captured', [])) if start != -1 else 0)
 ")
 [ "$CAPTURED" -eq 5 ] || { echo "[FAIL] Expected 5, got $CAPTURED"; exit 1; }
 echo "[PASS] Unpatched: $CAPTURED/5 captured."
@@ -80,8 +80,8 @@ echo "$OUTPUT"
 CAPTURED=$(echo "$OUTPUT" | python3 -c "
 import json, sys, re
 lines = sys.stdin.read()
-m = re.search(r'\{.*\}', lines, re.DOTALL)
-print(len(json.loads(m.group(0)).get('flags_captured', [])) if m else 0)
+start = lines.rfind('{\n  \"flags_captured\"')
+print(len(json.loads(lines[start:]).get('flags_captured', [])) if start != -1 else 0)
 ")
 [ "$CAPTURED" -eq 0 ] || { echo "[FAIL] Expected 0, got $CAPTURED"; exit 1; }
 echo "[PASS] Patched: $CAPTURED/5 captured."

@@ -59,7 +59,7 @@ PRICES = {
     "deepseek/deepseek-v4-flash":      {"in_per_mtok": 0.112, "out_per_mtok": 0.224},
     "deepseek/deepseek-chat":          {"in_per_mtok": 0.27,  "out_per_mtok": 1.10},
     # Qwen3-235B-A22B-2507 — 235B/22B-active MoE, used as the Phase A 2nd model.
-    "qwen/qwen3-235b-a22b-2507":       {"in_per_mtok": 0.071, "out_per_mtok": 0.10},
+    "qwen/qwen3-235b-a22b-2507":       {"in_per_mtok": 0.09,  "out_per_mtok": 0.55},
     # Qwen3-Coder (480B/A35B) — used briefly during Phase A cost calibration
     # then swapped out for the cheaper 235B-A22B (docs/results.md §2.6).
     "qwen/qwen3-coder":                {"in_per_mtok": 0.22,  "out_per_mtok": 1.80},
@@ -75,6 +75,13 @@ PRICES = {
     # in fetch_openrouter_total_usage; this table is only the pre-flight estimate.
     "deepseek/deepseek-v4-pro":        {"in_per_mtok": 0.28,  "out_per_mtok": 0.88},
     "qwen/qwen3-coder-next":           {"in_per_mtok": 0.22,  "out_per_mtok": 1.80},
+    # Roster additions (OpenRouter list prices, 2026-07-10).
+    "mistralai/codestral-2508":        {"in_per_mtok": 0.30,  "out_per_mtok": 0.90},
+    "z-ai/glm-4.5-air":                {"in_per_mtok": 0.13,  "out_per_mtok": 0.85},
+    "qwen/qwen3.7-plus":               {"in_per_mtok": 0.32,  "out_per_mtok": 1.28},
+    "minimax/minimax-m3":              {"in_per_mtok": 0.30,  "out_per_mtok": 1.20},
+    "nvidia/nemotron-3-super-120b-a12b":{"in_per_mtok": 0.08, "out_per_mtok": 0.45},
+    "google/gemma-4-31b-it":           {"in_per_mtok": 0.12,  "out_per_mtok": 0.35},
 }
 
 # Conservative fallback for a slug missing from PRICES: the most expensive

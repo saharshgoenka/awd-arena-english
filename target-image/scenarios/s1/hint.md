@@ -2,14 +2,15 @@
 
 This application has known vulnerabilities in the following areas:
 
-1. **Access control**: Some admin routes may only require a basic user session
-   when they should enforce stronger role checks.
-2. **Debug exposure**: Support or diagnostics endpoints may leak one
-   secret-bearing value even without a full environment dump.
-3. **Password storage**: Legacy password hashing may still appear in internal
-   audit or profile workflows.
+1. **Access control**: Report detail objects are reached by id. A user's own
+   report may reference a different user's report, and ownership checks matter.
+2. **Debug exposure**: An unadvertised diagnostics path may dump environment-like
+   configuration with the real secret under a non-obvious key among decoys.
+3. **Cryptographic failure**: Encrypted exports may reuse one keystream for every
+   item; a known plaintext export can reveal the keystream needed for the vault.
 4. **Data queries**: User input may flow directly into database queries.
-5. **Login security**: The authentication endpoint may lack brute-force protections.
+5. **Token security**: The portal access token verifier may trust `alg: none`
+   tokens with forged role claims.
 
-Flags are stored as environment variables FLAG_1 through FLAG_5 and seeded
-into the database at startup. Each flag is reachable via a distinct exploit path.
+Only FLAG_4 is stored in the injectable database table; the other flags are served
+from environment variables at runtime through distinct exploit paths.

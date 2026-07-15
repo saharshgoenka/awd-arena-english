@@ -57,9 +57,6 @@ echo "[PASS] Unpatched: $CAPTURED/5 captured."
 echo "[test] Applying oracle_patch.diff..."
 docker exec -i "$CONTAINER" bash -c "cd /app && patch -p1" < "$SCENARIO_DIR/oracle_patch.diff"
 
-echo "[test] Re-seeding with patched passwords..."
-docker exec "$CONTAINER" bash -c "cd /app && RAILS_ENV=production bin/rails db:seed"
-
 echo "[test] Restarting app..."
 docker exec "$CONTAINER" supervisorctl restart app
 sleep 10
@@ -94,23 +91,33 @@ STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/debug/runtime")
 [ "$STATUS" != "200" ] || { echo "[FAIL] /debug/runtime still returns 200 after patch"; exit 1; }
 echo "[PASS] /debug/runtime returns $STATUS (not 200)."
 
-echo "[test] Verifying patched editor loses admin/settings access..."
+echo "[test] Verifying patched editor still logs in and cannot use alg:none admin token..."
 COOKIE_JAR=$(mktemp)
 RESP=$(curl -sf -c "$COOKIE_JAR" -X POST "$BASE_URL/login" \
   -H "Content-Type: application/json" \
-  -d '{"username":"editor","password":"S6Editor-2mK7-Hub!"}' || echo "failed")
+  -d '{"username":"editor","password":"editor456"}' || echo "failed")
 echo "$RESP" | grep -q "Login successful" || { echo "[FAIL] Patched editor login failed"; exit 1; }
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" "$BASE_URL/admin/settings")
-[ "$STATUS" = "403" ] || { echo "[FAIL] Expected editor /admin/settings to return 403, got $STATUS"; exit 1; }
-echo "[PASS] Patched editor cannot reach /admin/settings."
+TOKEN=$(python3 - <<'PY' "$RESP"
+import base64, json, sys
+real = json.loads(sys.argv[1]).get("token", "")
+try:
+    claims = json.loads(base64.urlsafe_b64decode(real.split(".")[1] + "=" * (-len(real.split(".")[1]) % 4)))
+except Exception:
+    claims = {"username": "editor"}
+claims["role"] = "admin"
+def enc(obj):
+    return base64.urlsafe_b64encode(json.dumps(obj, separators=(",", ":")).encode()).rstrip(b"=").decode()
+print(f"{enc({'alg':'none','typ':'JWT'})}.{enc(claims)}.")
+PY
+)
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" -H "Authorization: Bearer $TOKEN" "$BASE_URL/admin/analytics")
+[ "$STATUS" != "200" ] || { echo "[FAIL] Expected forged alg:none token to fail, got $STATUS"; exit 1; }
+echo "[PASS] Patched alg:none admin token returns $STATUS (not 200)."
 
-echo "[test] Verifying patched profile token no longer leaks legacy hashes..."
-TOKEN=$(curl -sf -b "$COOKIE_JAR" "$BASE_URL/profile/token?username=author")
+echo "[test] Verifying patched BOLA owner check blocks cross-user report reads..."
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" "$BASE_URL/reports/4021")
 rm -f "$COOKIE_JAR"
-if echo "$TOKEN" | grep -q 'legacy_token'; then
-  echo "[FAIL] /profile/token still leaks legacy_token after patch"
-  exit 1
-fi
-echo "[PASS] Patched profile token endpoint no longer leaks hashes."
+[ "$STATUS" = "404" ] || { echo "[FAIL] Expected editor /reports/4021 to return 404, got $STATUS"; exit 1; }
+echo "[PASS] Patched editor cannot read admin escalation report."
 
 echo "[PASS] All tests passed."

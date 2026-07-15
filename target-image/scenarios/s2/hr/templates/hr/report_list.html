@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><title>PeopleOps — My Performance Reports</title></head>
+<body style="font-family:sans-serif;max-width:900px;margin:40px auto">
+<h2>My Performance Reports</h2>
+<p>Reports assigned to {{ request.user.username }}. Open a report to view details.</p>
+<ul>
+{% for r in reports %}
+  <li><a href="/hr/reports/{{ r.pk }}/">{{ r.title }}</a></li>
+{% empty %}
+  <li>No reports assigned.</li>
+{% endfor %}
+</ul>
+<p><a href="/dashboard/">Back to Dashboard</a></p>
+</body>
+</html>

@@ -1,0 +1,9 @@
+bench_run_id=sweep-llama_3_3_70b-20260711-160503  model=llama_3_3_70b  attack_minutes=10
+launched S1 -> match_1783811103_65e6524e
+launched S2 -> match_1783811111_fb971301
+launched S3 -> match_1783811119_d7d9090c
+launched S4 -> match_1783811815_02a889a1
+launched S5 -> match_1783811843_36228e61
+launched S6 -> match_1783812154_8716aaf1
+launched S7 -> match_1783812486_a66de952
+launched S8 -> match_1783812575_54a3f52b

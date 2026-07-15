@@ -21,5 +21,16 @@ class CreateTables < ActiveRecord::Migration[7.1]
       t.string :value
       t.timestamps
     end
+
+    # flag_1 (A01 IDOR/BOLA): per-user report objects addressed by id. One report
+    # (the admin escalation record) carries the flag placeholder; its id is not
+    # advertised and must be derived from the reference in the caller's own report.
+    create_table :reports do |t|
+      t.string  :owner
+      t.string  :title
+      t.text    :body
+      t.integer :escalation_ref
+      t.timestamps
+    end
   end
 end

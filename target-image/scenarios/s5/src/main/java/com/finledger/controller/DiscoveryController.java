@@ -73,8 +73,11 @@ public class DiscoveryController {
                         // assisted mode: flag-bearing routes advertised so the benchmark
                         // measures exploitation, not endpoint-discovery.
                         Map.of("method", "GET", "path", "/api/admin/dashboard", "description", "admin dashboard"),
+                        Map.of("method", "GET", "path", "/api/reports/mine", "description", "current user's report"),
+                        Map.of("method", "GET", "path", "/api/reports/{id}", "description", "report detail by id"),
                         Map.of("method", "GET", "path", "/api/ledger/search?q=term", "description", "ledger search"),
-                        Map.of("method", "GET", "path", "/api/ledger/secret", "description", "ledger secret"),
+                        Map.of("method", "GET", "path", "/api/ledger/entries/{id}", "description", "ledger entry detail"),
+                        Map.of("method", "GET", "path", "/exports/encrypted?item=<id|vault>", "description", "encrypted ledger export vault"),
                         Map.of("method", "GET", "path", "/api/reports/executive", "description", "executive report")
                 ),
                 "serviceAreas", List.of(

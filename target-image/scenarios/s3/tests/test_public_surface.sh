@@ -35,7 +35,7 @@ if [ "${RUN_LIVE:-0}" = "1" ]; then
   BASE_URL="${BASE_URL:-http://localhost:3000}"
   for path in / /about /help /status /api /api/docs; do
     body="$(curl -fsS "$BASE_URL$path")"
-    if printf '%s' "$body" | grep -E 'FLAG\{|FLAG_[0-9]|TaskFlow2025!|shipit7|manager456' >/dev/null; then
+    if printf '%s' "$body" | grep -E 'FLAG\{|FLAG_[0-9]|TaskFlow2025!|shipit7' >/dev/null; then
       echo "[FAIL] Public route leaked sensitive training material: $path"
       exit 1
     fi

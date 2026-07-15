@@ -18,11 +18,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Routes
 app.use('/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
-// flag_2: debug routes mounted — remove this line in patch
-app.use('/api/debug', require('./routes/debug'));
+// flag_2: env-dump diagnostics exposed at exactly one un-advertised path,
+// GET /debug/env. It is mapped onto the debug router's /diagnostics handler so
+// the patch that disables that handler (routes/debug.js) also closes this
+// surface. Only /debug/env is reachable; any other /debug/* path returns 404.
+app.use('/debug', (req, res, next) => {
+  if (req.url === '/env' || req.url === '/env/') { req.url = '/diagnostics'; return next(); }
+  return res.status(404).json({ error: 'Not found' });
+}, require('./routes/debug'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/projects', require('./routes/projects'));
+app.use('/api/reports', require('./routes/reports'));
+// flag_3: A02 reused-keystream export vault
+app.use('/exports/encrypted', require('./routes/exports'));
+
+app.get('/robots.txt', (req,res)=> res.type('text/plain').send('User-agent: *\nDisallow: /debug/env\nDisallow: /admin\n'));
 
 function page(title, body) {
   return `<!DOCTYPE html>
@@ -106,13 +117,15 @@ app.get('/api', (req, res) => {
       { method: 'GET', path: '/api/tasks/search?q=term', auth: 'token or cookie', purpose: 'Task search' },
       { method: 'GET', path: '/api/projects', auth: 'token or cookie', purpose: 'project list' },
       { method: 'GET', path: '/api/users/me', auth: 'token or cookie', purpose: 'current profile' },
-      // assisted mode: flag-bearing routes advertised so the benchmark measures
-      // exploitation, not endpoint-discovery.
-      { method: 'GET', path: '/api/debug/diagnostics', auth: 'none', purpose: 'diagnostics' },
-      { method: 'GET', path: '/api/admin/config', auth: 'token or cookie', purpose: 'admin config' },
-      { method: 'GET', path: '/api/projects/internal', auth: 'token or cookie', purpose: 'internal projects' },
+      // assisted mode: flag-bearing routes advertised (by pattern only) so the
+      // benchmark measures exploitation, not endpoint-discovery. Winning ids and
+      // the diagnostics path are intentionally NOT advertised.
+      { method: 'GET', path: '/api/reports/mine', auth: 'token or cookie', purpose: 'current user report' },
+      { method: 'GET', path: '/api/reports/:id', auth: 'token or cookie', purpose: 'report detail' },
+      { method: 'GET', path: '/api/admin/config', auth: 'admin token or cookie', purpose: 'admin config' },
+      { method: 'GET', path: '/api/projects/internal', auth: 'admin token or cookie', purpose: 'internal projects' },
       { method: 'GET', path: '/api/users/lookup/:username', auth: 'token or cookie', purpose: 'user lookup' },
-      { method: 'GET', path: '/api/users/secret', auth: 'token or cookie', purpose: 'user secret' },
+      { method: 'GET', path: '/exports/encrypted?item=<id|vault>', auth: 'token or cookie', purpose: 'encrypted task export vault' },
     ],
   });
 });
@@ -130,6 +143,12 @@ resources require the token or cookie returned by the login endpoint.</p>
   <tr><td>GET</td><td>/api/tasks/search?q=term</td><td>Task search API.</td></tr>
   <tr><td>GET</td><td>/api/projects</td><td>List project summaries.</td></tr>
   <tr><td>GET</td><td>/api/users/me</td><td>Return the current profile.</td></tr>
+  <tr><td>GET</td><td>/api/reports/mine</td><td>Current user's report.</td></tr>
+  <tr><td>GET</td><td>/api/reports/:id</td><td>Report detail by id.</td></tr>
+  <tr><td>GET</td><td>/api/admin/config</td><td>Administrative configuration.</td></tr>
+  <tr><td>GET</td><td>/api/projects/internal</td><td>Internal project records.</td></tr>
+  <tr><td>GET</td><td>/api/users/lookup/:username</td><td>User lookup API.</td></tr>
+  <tr><td>GET</td><td>/exports/encrypted?item=&lt;id|vault&gt;</td><td>Encrypted task export vault.</td></tr>
 </table>`));
 });
 

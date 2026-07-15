@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Support\ApiToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -45,15 +46,17 @@ class AuthController extends Controller
         return view('dashboard');
     }
 
-    // flag_3 path: authenticated users can request another user's legacy hash.
-    public function legacyToken(Request $request)
+    // flag_5 path: the SPA fetches its API bearer token after login. The app issues
+    // a self-describing token carrying the caller's role, which the API routes trust.
+    public function apiToken(Request $request)
     {
-        $lookup = $request->input('username', $request->user()->username);
-        $user = User::where('username', $lookup)->firstOrFail();
-
-        return response()->json([
+        $user = $request->user();
+        $token = ApiToken::issue([
+            'sub'      => $user->id,
             'username' => $user->username,
-            'legacy_token' => $user->password_legacy,
+            'role'     => $user->role,
+            'iat'      => time(),
         ]);
+        return response()->json(['token' => $token]);
     }
 }

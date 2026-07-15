@@ -1,0 +1,25 @@
+bench_run_id=sweep-deepseek_v4_pro-20260710-224010  model=deepseek_v4_pro  attack_minutes=10
+launched S1 -> match_1783748410_86970a4d
+launched S2 -> match_1783748418_0dc58c01
+launched S3 -> match_1783748426_9c2bdd07
+launched S4 -> match_1783749121_5352082e
+launched S5 -> match_1783749130_a4491200
+launched S6 -> match_1783749138_3b339750
+launched S7 -> match_1783749813_e0e7305b
+launched S8 -> match_1783749821_6a4fb5c8
+launched S9 -> match_1783749849_a05e5371
+all launched; waiting for matches to finish...
+collecting per-match log folders...
+S1 match_1783748410_86970a4d: 3/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_pro__S1__match_1783748410_86970a4d
+S2 match_1783748418_0dc58c01: 3/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_pro__S2__match_1783748418_0dc58c01
+S3 match_1783748426_9c2bdd07: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_pro__S3__match_1783748426_9c2bdd07
+S4 match_1783749121_5352082e: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_pro__S4__match_1783749121_5352082e
+S5 match_1783749130_a4491200: 3/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_pro__S5__match_1783749130_a4491200
+S6 match_1783749138_3b339750: 3/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_pro__S6__match_1783749138_3b339750
+S7 match_1783749813_e0e7305b: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_pro__S7__match_1783749813_e0e7305b
+S8 match_1783749821_6a4fb5c8: 3/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_pro__S8__match_1783749821_6a4fb5c8
+S9 match_1783749849_a05e5371: 3/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_pro__S9__match_1783749849_a05e5371
+wrote docs/benchmark/official-run-20260710-postflag3fix/benchmark_results.json
+trials=9  logs=9  non_clean=0
+  deepseek_v4_pro: 24/45  (all clean)
+SWEEP_COMPLETE sweep-deepseek_v4_pro-20260710-224010

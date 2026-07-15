@@ -18,8 +18,8 @@ class ProfileController < ApplicationController
       render json: { error: "Author access only" }, status: :forbidden
       return
     end
-    # env, not the injectable flags table (only flag_4 lives in the DB)
-    flag = ENV.fetch("FLAG_3", "FLAG{missing}")
-    render json: { message: "Author vault", secret: flag }
+    # flag_3 no longer lives here. The secret is only recoverable via the reused
+    # export keystream (A02 many-time pad) at /exports/encrypted?item=vault.
+    render json: { message: "Author vault", notes: "No stored secrets. See export tooling." }
   end
 end

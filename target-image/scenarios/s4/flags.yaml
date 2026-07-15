@@ -6,17 +6,17 @@ flags:
     hint: "Laravel routes without middleware are public by default."
   - id: flag_2
     env: FLAG_2
-    owasp: A02
+    owasp: A05
     category: security_misconfiguration
     hint: "The .env file and debug controllers should never be web-accessible."
   - id: flag_3
     env: FLAG_3
-    owasp: A04
+    owasp: A02
     category: cryptographic_failures
-    hint: "A legacy_token column storing MD5 hashes is a liability."
+    hint: "Loose comparison of MD5 legacy tokens makes PHP magic hashes a liability."
   - id: flag_4
     env: FLAG_4
-    owasp: A05
+    owasp: A03
     category: injection
     hint: "DB::select() with string interpolation is raw SQL with extra steps."
   - id: flag_5

@@ -1,0 +1,25 @@
+bench_run_id=sweep-deepseek_v4_flash-20260710-231556  model=deepseek_v4_flash  attack_minutes=10
+launched S1 -> match_1783750556_43712739
+launched S2 -> match_1783750564_13a7d36f
+launched S3 -> match_1783750573_11ba3a6b
+launched S4 -> match_1783751268_f62e9e90
+launched S5 -> match_1783751297_cd82ec09
+launched S6 -> match_1783751305_bcc8379f
+launched S7 -> match_1783751940_3d028bb3
+launched S8 -> match_1783751989_c70eb80b
+launched S9 -> match_1783752017_6327fd08
+all launched; waiting for matches to finish...
+collecting per-match log folders...
+S1 match_1783750556_43712739: 5/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_flash__S1__match_1783750556_43712739
+S2 match_1783750564_13a7d36f: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_flash__S2__match_1783750564_13a7d36f
+S3 match_1783750573_11ba3a6b: 4/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_flash__S3__match_1783750573_11ba3a6b
+S4 match_1783751268_f62e9e90: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_flash__S4__match_1783751268_f62e9e90
+S5 match_1783751297_cd82ec09: 4/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_flash__S5__match_1783751297_cd82ec09
+S6 match_1783751305_bcc8379f: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_flash__S6__match_1783751305_bcc8379f
+S7 match_1783751940_3d028bb3: 3/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_flash__S7__match_1783751940_3d028bb3
+S8 match_1783751989_c70eb80b: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_flash__S8__match_1783751989_c70eb80b
+S9 match_1783752017_6327fd08: 3/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/deepseek_v4_flash__S9__match_1783752017_6327fd08
+wrote docs/benchmark/official-run-20260710-postflag3fix/benchmark_results.json
+trials=9  logs=18  non_clean=0
+  deepseek_v4_flash: 27/45  (all clean)
+SWEEP_COMPLETE sweep-deepseek_v4_flash-20260710-231556

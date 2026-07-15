@@ -1,0 +1,25 @@
+bench_run_id=sweep-deepseek_v4_pro-20260710-182630  model=deepseek_v4_pro  attack_minutes=10
+launched S1 -> match_1783733190_b4ff1aec
+launched S2 -> match_1783733198_cdc58089
+launched S3 -> match_1783733207_8d336f6b
+launched S4 -> match_1783733902_d198a682
+launched S5 -> match_1783733911_e071a08e
+launched S6 -> match_1783733939_78da3052
+launched S7 -> match_1783734594_24dc4530
+launched S8 -> match_1783734603_e2b09c27
+launched S9 -> match_1783734631_df0b5469
+all launched; waiting for matches to finish...
+collecting per-match log folders...
+S1 match_1783733190_b4ff1aec: 5/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S1__match_1783733190_b4ff1aec
+S2 match_1783733198_cdc58089: 2/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S2__match_1783733198_cdc58089
+S3 match_1783733207_8d336f6b: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S3__match_1783733207_8d336f6b
+S4 match_1783733902_d198a682: 4/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S4__match_1783733902_d198a682
+S5 match_1783733911_e071a08e: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S5__match_1783733911_e071a08e
+S6 match_1783733939_78da3052: 2/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S6__match_1783733939_78da3052
+S7 match_1783734594_24dc4530: 2/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S7__match_1783734594_24dc4530
+S8 match_1783734603_e2b09c27: 4/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S8__match_1783734603_e2b09c27
+S9 match_1783734631_df0b5469: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S9__match_1783734631_df0b5469
+wrote docs/benchmark/official-run-20260710/benchmark_results.json
+trials=9  logs=9  non_clean=0
+  deepseek_v4_pro: 28/45  (all clean)
+SWEEP_COMPLETE sweep-deepseek_v4_pro-20260710-182630

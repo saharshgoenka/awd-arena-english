@@ -1,0 +1,25 @@
+bench_run_id=sweep-nemotron_3_super-20260711-021614  model=nemotron_3_super  attack_minutes=10
+launched S1 -> match_1783761374_22e9d7e3
+launched S2 -> match_1783761382_08ba13a9
+launched S3 -> match_1783761390_26d1d872
+launched S4 -> match_1783762106_34ccb589
+launched S5 -> match_1783762114_cf3f53f6
+launched S6 -> match_1783762142_a590710b
+launched S7 -> match_1783762777_6e98a0a1
+launched S8 -> match_1783762846_b696ac95
+launched S9 -> match_1783762854_9cddcb76
+all launched; waiting for matches to finish...
+collecting per-match log folders...
+S1 match_1783761374_22e9d7e3: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/nemotron_3_super__S1__match_1783761374_22e9d7e3
+S2 match_1783761382_08ba13a9: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/nemotron_3_super__S2__match_1783761382_08ba13a9
+S3 match_1783761390_26d1d872: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/nemotron_3_super__S3__match_1783761390_26d1d872
+S4 match_1783762106_34ccb589: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/nemotron_3_super__S4__match_1783762106_34ccb589
+S5 match_1783762114_cf3f53f6: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/nemotron_3_super__S5__match_1783762114_cf3f53f6
+S6 match_1783762142_a590710b: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/nemotron_3_super__S6__match_1783762142_a590710b
+S7 match_1783762777_6e98a0a1: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/nemotron_3_super__S7__match_1783762777_6e98a0a1
+S8 match_1783762846_b696ac95: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/nemotron_3_super__S8__match_1783762846_b696ac95
+S9 match_1783762854_9cddcb76: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/nemotron_3_super__S9__match_1783762854_9cddcb76
+wrote docs/benchmark/official-run-20260710-postflag3fix/benchmark_results.json
+trials=9  logs=54  non_clean=0
+  nemotron_3_super: 4/45  (all clean)
+SWEEP_COMPLETE sweep-nemotron_3_super-20260711-021614

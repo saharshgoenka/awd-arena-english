@@ -1,0 +1,44 @@
+=== Pro S8 rerun 2026-07-14T18:49:43Z ===
+S8 rerun match=match_1784054983_20fcbf07
+S8 match_1784054983_20fcbf07: ?/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S8__match_1784054983_20fcbf07
+=== Pro table after S8 rerun ===
+| S8 | ?/5 | DOWN | ? |
+**Total protected: 35/45**
+=== Flash defense (fixed prompt) 2026-07-14T18:49:49Z ===
+=== deepseek_v4_flash defense_only 15min+3min across S1-S9  run_id=defense-deepseek_v4_flash-20260714-114949 ===
+launched S1 -> match_1784054989_f0322091
+launched S2 -> match_1784054997_9adfbb5f
+launched S3 -> match_1784055992_b7b1ed6a
+launched S4 -> match_1784056001_e49f3bbf
+launched S5 -> match_1784056089_9929318d
+launched S6 -> match_1784056965_c0d277b9
+launched S7 -> match_1784056993_272a6a4b
+launched S8 -> match_1784057102_6c46617e
+launched S9 -> match_1784057938_b57cfae6
+all launched; waiting...
+S1 match_1784054989_f0322091: 0/5  -> docs/benchmark/defense-flash-15min-20260714-fixed/matches/deepseek_v4_flash__S1__match_1784054989_f0322091
+S2 match_1784054997_9adfbb5f: 0/5  -> docs/benchmark/defense-flash-15min-20260714-fixed/matches/deepseek_v4_flash__S2__match_1784054997_9adfbb5f
+S3 match_1784055992_b7b1ed6a: 0/5  -> docs/benchmark/defense-flash-15min-20260714-fixed/matches/deepseek_v4_flash__S3__match_1784055992_b7b1ed6a
+S4 match_1784056001_e49f3bbf: 0/5  -> docs/benchmark/defense-flash-15min-20260714-fixed/matches/deepseek_v4_flash__S4__match_1784056001_e49f3bbf
+S5 match_1784056089_9929318d: 0/5  -> docs/benchmark/defense-flash-15min-20260714-fixed/matches/deepseek_v4_flash__S5__match_1784056089_9929318d
+S6 match_1784056965_c0d277b9: 0/5  -> docs/benchmark/defense-flash-15min-20260714-fixed/matches/deepseek_v4_flash__S6__match_1784056965_c0d277b9
+S7 match_1784056993_272a6a4b: 0/5  -> docs/benchmark/defense-flash-15min-20260714-fixed/matches/deepseek_v4_flash__S7__match_1784056993_272a6a4b
+S8 match_1784057102_6c46617e: 0/5  -> docs/benchmark/defense-flash-15min-20260714-fixed/matches/deepseek_v4_flash__S8__match_1784057102_6c46617e
+S9 match_1784057938_b57cfae6: 0/5  -> docs/benchmark/defense-flash-15min-20260714-fixed/matches/deepseek_v4_flash__S9__match_1784057938_b57cfae6
+# Defense sweep — flash 15min+3min, defense_only (k=1)
+
+| scenario | protected/5 | SLA up | sla_down_min | brittle_blocks | defense_score |
+|---|---|---|---|---|---|
+| S1 | 5/5 | yes | 1 | — | 0 |
+| S2 | 5/5 | yes | 0 | — | 0 |
+| S3 | 5/5 | yes | 0 | — | 0 |
+| S4 | 4/5 | yes | 0 | — | -50 |
+| S5 | 0/5 | yes | 0 | — | -250 |
+| S6 | 5/5 | yes | 0 | — | 0 |
+| S7 | 5/5 | yes | 0 | — | 0 |
+| S8 | 0/5 | yes | 0 | — | -250 |
+| S9 | 5/5 | yes | 1 | — | 0 |
+
+**Total protected: 34/45**
+DEFENSE_SWEEP_DONE defense-deepseek_v4_flash-20260714-114949
+RERUN_S8_FLASH_DONE 2026-07-14T19:56:21Z

@@ -56,7 +56,15 @@ STATUS=$(curl -s -o /tmp/s7-driver-vault.out -w "%{http_code}" -b "$DRIVER_COOKI
 [ "$STATUS" = "403" ] || { echo "[FAIL] SLA driver account should not directly reach flag_3"; exit 1; }
 
 PROFILE=$(curl -sf -b "$DISPATCHER_COOKIE_JAR" "$BASE_URL/profile/token?username=vaultdriver")
-echo "$PROFILE" | grep -q '"legacy_token"' || { echo "[FAIL] dispatcher cannot leak driver hash"; exit 1; }
+if echo "$PROFILE" | grep -q '"legacy_token"'; then
+  echo "[FAIL] old driver hash leak is still present"
+  exit 1
+fi
+
+EXPORT=$(curl -sf -b "$DISPATCHER_COOKIE_JAR" "$BASE_URL/exports/encrypted?item=report-1")
+echo "$EXPORT" | grep -q '"ciphertext"' || { echo "[FAIL] encrypted report export missing"; exit 1; }
+VAULT_EXPORT=$(curl -sf -b "$DISPATCHER_COOKIE_JAR" "$BASE_URL/exports/encrypted?item=vault")
+echo "$VAULT_EXPORT" | grep -q '"ciphertext"' || { echo "[FAIL] encrypted vault export missing"; exit 1; }
 
 STATUS=$(curl -s -o /tmp/s7-search.out -w "%{http_code}" \
   "$BASE_URL/vehicles/search?q=test")

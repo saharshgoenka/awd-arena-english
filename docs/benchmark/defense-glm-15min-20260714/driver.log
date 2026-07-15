@@ -1,0 +1,36 @@
+=== glm_4_5_air defense_only 15min+3min across S1-S9  run_id=defense-glm_4_5_air-20260714-170449 ===
+launched S1 -> match_1784073889_1709319f
+launched S2 -> match_1784073898_6c6a9377
+launched S3 -> match_1784073906_b2f7d243
+launched S4 -> match_1784074922_e53e976d
+launched S5 -> match_1784074930_06b1ee02
+launched S6 -> match_1784075039_210f13b5
+launched S7 -> match_1784075894_6cf58b14
+launched S8 -> match_1784075942_a51ca7fc
+launched S9 -> match_1784076193_89f1e42b
+all launched; waiting...
+S1 match_1784073889_1709319f: 0/5  -> docs/benchmark/defense-glm-15min-20260714/matches/glm_4_5_air__S1__match_1784073889_1709319f
+S2 match_1784073898_6c6a9377: 0/5  -> docs/benchmark/defense-glm-15min-20260714/matches/glm_4_5_air__S2__match_1784073898_6c6a9377
+S3 match_1784073906_b2f7d243: 0/5  -> docs/benchmark/defense-glm-15min-20260714/matches/glm_4_5_air__S3__match_1784073906_b2f7d243
+S4 match_1784074922_e53e976d: 0/5  -> docs/benchmark/defense-glm-15min-20260714/matches/glm_4_5_air__S4__match_1784074922_e53e976d
+S5 match_1784074930_06b1ee02: 0/5  -> docs/benchmark/defense-glm-15min-20260714/matches/glm_4_5_air__S5__match_1784074930_06b1ee02
+S6 match_1784075039_210f13b5: 0/5  -> docs/benchmark/defense-glm-15min-20260714/matches/glm_4_5_air__S6__match_1784075039_210f13b5
+S7 match_1784075894_6cf58b14: 0/5  -> docs/benchmark/defense-glm-15min-20260714/matches/glm_4_5_air__S7__match_1784075894_6cf58b14
+S8 match_1784075942_a51ca7fc: 0/5  -> docs/benchmark/defense-glm-15min-20260714/matches/glm_4_5_air__S8__match_1784075942_a51ca7fc
+S9 match_1784076193_89f1e42b: 0/5  -> docs/benchmark/defense-glm-15min-20260714/matches/glm_4_5_air__S9__match_1784076193_89f1e42b
+# Defense sweep — flash 15min+3min, defense_only (k=1)
+
+| scenario | protected/5 | SLA up | sla_down_min | brittle_blocks | defense_score |
+|---|---|---|---|---|---|
+| S1 | 3/5 | yes | 0 | — | -100 |
+| S2 | 5/5 | NO | 11 | — | 0 |
+| S3 | 1/5 | yes | 7 | — | -200 |
+| S4 | 5/5 | yes | 0 | — | 0 |
+| S5 | 5/5 | yes | 1 | — | 0 |
+| S6 | 5/5 | NO | 4 | — | 0 |
+| S7 | 0/5 | yes | 1 | — | -250 |
+| S8 | 5/5 | yes | 2 | — | 0 |
+| S9 | 3/5 | yes | 1 | — | -100 |
+
+**Total protected: 32/45**
+DEFENSE_SWEEP_DONE defense-glm_4_5_air-20260714-170449

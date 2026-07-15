@@ -34,6 +34,13 @@ db.exec(`
     name TEXT UNIQUE,
     value TEXT
   );
+  CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY,
+    owner TEXT,
+    title TEXT,
+    body TEXT,
+    escalation_ref INTEGER
+  );
 `);
 
 // Seed users
@@ -59,6 +66,24 @@ const tasks = [
 ];
 for (const t of tasks) {
   insertTask.run(...t);
+}
+
+// Seed per-user reports (flag_1: A01 IDOR/BOLA).
+// Each user owns a report addressed by a non-guessable id. The manager's report
+// references the admin escalation report via `escalation_ref`; that escalation
+// report carries the flag placeholder `__FLAG_1__`, substituted from FLAG_1 at
+// serve time (never persisted, so the flag_4 UNION SQLi cannot dump it).
+const insertReport = db.prepare(
+  'INSERT OR IGNORE INTO reports (id, owner, title, body, escalation_ref) VALUES (?, ?, ?, ?, ?)'
+);
+const reports = [
+  [1004, 'admin', 'Ops runbook index', 'Links to on-call runbooks and deploy checklists.', null],
+  [1005, 'devuser', 'Sprint 14 retro notes', 'Action items from the sprint 14 retrospective; nothing blocking.', null],
+  [1006, 'manager', 'Q3 access review', 'Reviewing privileged access grants for Q3. The approval record is tracked as escalation report #90312.', 90312],
+  [90312, 'admin', 'Access escalation grant', 'Q3 privileged access escalation approved. Restricted operations token: __FLAG_1__', null],
+];
+for (const r of reports) {
+  insertReport.run(...r);
 }
 
 // Seed flags from environment variables

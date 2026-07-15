@@ -21,15 +21,4 @@ class ProductController extends Controller
         $results = DB::select("SELECT id, name, description FROM products WHERE name LIKE '%{$q}%'");
         return response()->json(['results' => $results]);
     }
-
-    // flag_3 target: analyst-only endpoint
-    public function secretVault(Request $request)
-    {
-        if ($request->user()->username !== 'analyst') {
-            return response()->json(['error' => 'Access restricted'], 403);
-        }
-        // env, not the injectable flags table (only flag_4 lives in the DB)
-        $flag = (object) ['value' => getenv('FLAG_3') ?: 'FLAG{missing}'];
-        return response()->json(['secret' => $flag->value]);
-    }
 }

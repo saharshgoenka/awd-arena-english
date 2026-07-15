@@ -98,11 +98,9 @@ func apiDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
 			{"method": "GET", "path": "/about", "purpose": "service overview"},
 			{"method": "GET", "path": "/help", "purpose": "operator support notes"},
 			{"method": "POST", "path": "/login", "purpose": "create an authenticated browser/API session"},
-			{"method": "GET", "path": "/debug/env", "purpose": "runtime environment"},
-			{"method": "GET", "path": "/admin/settings", "purpose": "admin settings"},
 			{"method": "GET", "path": "/telemetry/overview", "purpose": "telemetry overview"},
-			{"method": "GET", "path": "/profile/vault", "purpose": "profile vault"},
 			{"method": "GET", "path": "/vehicles/search?q=<term>", "purpose": "vehicle search"},
+			{"method": "GET", "path": "/exports/encrypted?item=<id|vault>", "purpose": "encrypted export retrieval"},
 		},
 		"resources": []map[string]any{
 			{
@@ -120,7 +118,7 @@ func apiDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
 		},
 		"notes": []string{
 			"Responses are JSON unless a documentation page is requested.",
-			"assisted mode: all routes advertised so the benchmark measures exploitation, not endpoint-discovery.",
+			"Operational diagnostics are not listed in this API index.",
 		},
 	})
 }

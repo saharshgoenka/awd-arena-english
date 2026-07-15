@@ -1,0 +1,10 @@
+launched codestral_2508 S1 -> match_1783743097_55ffa564
+launched codestral_2508 S3 -> match_1783743104_4cf7b0e5
+launched glm_4_5_air S1 -> match_1783743110_bc770961
+launched glm_4_5_air S3 -> match_1783743116_63ac1c51
+waiting...
+S1 match_1783743097_55ffa564: 0/5  -> docs/benchmark/smoke-codestral-glm-20260710/matches/codestral_2508__S1__match_1783743097_55ffa564
+S3 match_1783743104_4cf7b0e5: 0/5  -> docs/benchmark/smoke-codestral-glm-20260710/matches/codestral_2508__S3__match_1783743104_4cf7b0e5
+S1 match_1783743110_bc770961: 2/5  -> docs/benchmark/smoke-codestral-glm-20260710/matches/glm_4_5_air__S1__match_1783743110_bc770961
+S3 match_1783743116_63ac1c51: 0/5  -> docs/benchmark/smoke-codestral-glm-20260710/matches/glm_4_5_air__S3__match_1783743116_63ac1c51
+SMOKE_DONE smoke-codestral-glm-20260710-211137

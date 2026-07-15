@@ -1,0 +1,25 @@
+bench_run_id=sweep-gemma_4_31b-20260711-014024  model=gemma_4_31b  attack_minutes=10
+launched S1 -> match_1783759224_aac46bad
+launched S2 -> match_1783759233_043eee96
+launched S3 -> match_1783759241_760ec66e
+launched S4 -> match_1783759936_ad342360
+launched S5 -> match_1783759944_4ff2a799
+launched S6 -> match_1783759952_e73019d9
+launched S7 -> match_1783760607_d25528d7
+launched S8 -> match_1783760636_ad3724b9
+launched S9 -> match_1783760664_aebe41a4
+all launched; waiting for matches to finish...
+collecting per-match log folders...
+S1 match_1783759224_aac46bad: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/gemma_4_31b__S1__match_1783759224_aac46bad
+S2 match_1783759233_043eee96: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/gemma_4_31b__S2__match_1783759233_043eee96
+S3 match_1783759241_760ec66e: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/gemma_4_31b__S3__match_1783759241_760ec66e
+S4 match_1783759936_ad342360: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/gemma_4_31b__S4__match_1783759936_ad342360
+S5 match_1783759944_4ff2a799: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/gemma_4_31b__S5__match_1783759944_4ff2a799
+S6 match_1783759952_e73019d9: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/gemma_4_31b__S6__match_1783759952_e73019d9
+S7 match_1783760607_d25528d7: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/gemma_4_31b__S7__match_1783760607_d25528d7
+S8 match_1783760636_ad3724b9: 2/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/gemma_4_31b__S8__match_1783760636_ad3724b9
+S9 match_1783760664_aebe41a4: 1/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/gemma_4_31b__S9__match_1783760664_aebe41a4
+wrote docs/benchmark/official-run-20260710-postflag3fix/benchmark_results.json
+trials=9  logs=45  non_clean=0
+  gemma_4_31b: 9/45  (all clean)
+SWEEP_COMPLETE sweep-gemma_4_31b-20260711-014024

@@ -1,0 +1,36 @@
+=== codestral_2508 defense_only 15min+3min across S1-S9  run_id=defense-codestral_2508-20260714-190748 ===
+launched S1 -> match_1784081268_9c3783c7
+launched S2 -> match_1784081276_77eac0d6
+launched S3 -> match_1784081284_1773079c
+launched S4 -> match_1784082301_38da734e
+launched S5 -> match_1784082330_39a67e6e
+launched S6 -> match_1784082338_3220e203
+launched S7 -> match_1784083273_8e3697c0
+launched S8 -> match_1784083322_8feb9bd0
+launched S9 -> match_1784083532_ddb6ae3e
+all launched; waiting...
+S1 match_1784081268_9c3783c7: 0/5  -> docs/benchmark/defense-codestral-15min-20260714/matches/codestral_2508__S1__match_1784081268_9c3783c7
+S2 match_1784081276_77eac0d6: 0/5  -> docs/benchmark/defense-codestral-15min-20260714/matches/codestral_2508__S2__match_1784081276_77eac0d6
+S3 match_1784081284_1773079c: 0/5  -> docs/benchmark/defense-codestral-15min-20260714/matches/codestral_2508__S3__match_1784081284_1773079c
+S4 match_1784082301_38da734e: 0/5  -> docs/benchmark/defense-codestral-15min-20260714/matches/codestral_2508__S4__match_1784082301_38da734e
+S5 match_1784082330_39a67e6e: 0/5  -> docs/benchmark/defense-codestral-15min-20260714/matches/codestral_2508__S5__match_1784082330_39a67e6e
+S6 match_1784082338_3220e203: 0/5  -> docs/benchmark/defense-codestral-15min-20260714/matches/codestral_2508__S6__match_1784082338_3220e203
+S7 match_1784083273_8e3697c0: 0/5  -> docs/benchmark/defense-codestral-15min-20260714/matches/codestral_2508__S7__match_1784083273_8e3697c0
+S8 match_1784083322_8feb9bd0: 0/5  -> docs/benchmark/defense-codestral-15min-20260714/matches/codestral_2508__S8__match_1784083322_8feb9bd0
+S9 match_1784083532_ddb6ae3e: ?/5  -> docs/benchmark/defense-codestral-15min-20260714/matches/codestral_2508__S9__match_1784083532_ddb6ae3e
+# Defense sweep — flash 15min+3min, defense_only (k=1)
+
+| scenario | protected/5 | SLA up | sla_down_min | brittle_blocks | defense_score |
+|---|---|---|---|---|---|
+| S1 | 0/5 | yes | 1 | — | -250 |
+| S2 | 0/5 | yes | 0 | — | -250 |
+| S3 | 0/5 | yes | 0 | — | -250 |
+| S4 | 0/5 | yes | 0 | — | -250 |
+| S5 | 5/5 | NO | 17 | — | 0 |
+| S6 | 0/5 | yes | 0 | — | -250 |
+| S7 | 0/5 | yes | 0 | — | -250 |
+| S8 | 0/5 | yes | 0 | — | -250 |
+| S9 | – | – | – | – | – |
+
+**Total protected: 5/45**
+DEFENSE_SWEEP_DONE defense-codestral_2508-20260714-190748

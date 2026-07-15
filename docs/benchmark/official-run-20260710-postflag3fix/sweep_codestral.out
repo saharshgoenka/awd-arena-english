@@ -1,0 +1,25 @@
+bench_run_id=sweep-codestral_2508-20260711-182257  model=codestral_2508  attack_minutes=10
+launched S1 -> match_1783819378_0ba4526b
+launched S2 -> match_1783819386_93c44fe0
+launched S3 -> match_1783819394_e79a3cda
+launched S4 -> match_1783820090_0f10aca5
+launched S5 -> match_1783820098_1154bb0f
+launched S6 -> match_1783820107_0a0caecf
+launched S7 -> match_1783820763_e70c5172
+launched S8 -> match_1783820812_8cff0374
+launched S9 -> match_1783820820_5b2db36f
+all launched; waiting for matches to finish...
+collecting per-match log folders...
+S1 match_1783819378_0ba4526b: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/codestral_2508__S1__match_1783819378_0ba4526b
+S2 match_1783819386_93c44fe0: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/codestral_2508__S2__match_1783819386_93c44fe0
+S3 match_1783819394_e79a3cda: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/codestral_2508__S3__match_1783819394_e79a3cda
+S4 match_1783820090_0f10aca5: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/codestral_2508__S4__match_1783820090_0f10aca5
+S5 match_1783820098_1154bb0f: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/codestral_2508__S5__match_1783820098_1154bb0f
+S6 match_1783820107_0a0caecf: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/codestral_2508__S6__match_1783820107_0a0caecf
+S7 match_1783820763_e70c5172: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/codestral_2508__S7__match_1783820763_e70c5172
+S8 match_1783820812_8cff0374: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/codestral_2508__S8__match_1783820812_8cff0374
+S9 match_1783820820_5b2db36f: 0/5  -> docs/benchmark/official-run-20260710-postflag3fix/matches/codestral_2508__S9__match_1783820820_5b2db36f
+wrote docs/benchmark/official-run-20260710-postflag3fix/benchmark_results.json
+trials=9  logs=81  non_clean=0
+  codestral_2508: 0/45  (all clean)
+SWEEP_COMPLETE sweep-codestral_2508-20260711-182257

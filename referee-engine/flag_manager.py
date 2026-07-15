@@ -487,6 +487,66 @@ class SLAChecker:
                 await asyncio.wait_for(proc.communicate(), timeout=10)
                 return proc.returncode == 0
 
+            async def _login_ok(login_path: str, kind: str, recipe: Optional[Dict[str, Any]]) -> bool:
+                # Assert auth ACTUALLY SUCCEEDS (not just that the endpoint serves a
+                # <500 response). Logs in with the foothold credential — handling CSRF
+                # for Django/Laravel and JSON vs form bodies — and requires a real
+                # success signal: 2xx/3xx AND (a session cookie OR a token in the body
+                # OR a redirect to a dashboard). A patch that breaks login returns to the
+                # login page with no session and correctly reads as DOWN. Script is
+                # base64-passed to sidestep multi-layer shell escaping.
+                import base64
+                recipe = recipe or {}
+                user = str(recipe.get("username", ""))
+                pw = str(recipe.get("password", ""))
+                script = (
+                    "import json,re,sys,urllib.request,urllib.parse,urllib.error,http.cookiejar\n"
+                    "port,path,kind,user,pw=sys.argv[1:6]\n"
+                    "base='http://127.0.0.1:'+port\n"
+                    "cj=http.cookiejar.CookieJar()\n"
+                    "op=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))\n"
+                    "tok=None\n"
+                    "try:\n"
+                    "    if kind in ('csrf_django','csrf_laravel'):\n"
+                    "        try: html=op.open(base+path,timeout=6).read().decode('utf-8','replace')\n"
+                    "        except urllib.error.HTTPError as e: html=e.read().decode('utf-8','replace')\n"
+                    "        m=re.search(r'name=\"(?:csrfmiddlewaretoken|_token|authenticity_token)\"[^>]*value=\"([^\"]+)\"',html) or re.search(r'value=\"([^\"]+)\"[^>]*name=\"(?:csrfmiddlewaretoken|_token|authenticity_token)\"',html)\n"
+                    "        if m: tok=m.group(1)\n"
+                    "    if kind=='json':\n"
+                    "        data=json.dumps({'username':user,'password':pw}).encode(); headers={'Content-Type':'application/json'}\n"
+                    "    else:\n"
+                    "        form={'username':user,'password':pw}\n"
+                    "        if tok: form['csrfmiddlewaretoken']=tok; form['_token']=tok; form['authenticity_token']=tok\n"
+                    "        data=urllib.parse.urlencode(form).encode(); headers={'Content-Type':'application/x-www-form-urlencoded'}\n"
+                    "    req=urllib.request.Request(base+path,data=data,headers=headers,method='POST')\n"
+                    "    try: r=op.open(req,timeout=6); code=r.status; body=r.read(800).decode('utf-8','replace'); final=r.geturl()\n"
+                    "    except urllib.error.HTTPError as e: code=e.code; body=e.read(800).decode('utf-8','replace'); final=base+path\n"
+                    "    if not (200<=code<400): sys.exit(1)\n"
+                    "    sess=any(c.name.lower() not in ('csrftoken','xsrf-token') for c in cj)\n"
+                    "    tokb=('token' in body.lower()) or ('jwt' in body.lower())\n"
+                    "    dash='dashboard' in final.lower()\n"
+                    "    sys.exit(0 if (sess or tokb or dash) else 1)\n"
+                    "except SystemExit: raise\n"
+                    "except Exception: sys.exit(1)\n"
+                )
+                b64 = base64.b64encode(script.encode()).decode()
+                decoder = "import base64;exec(base64.b64decode('%s'))" % b64
+                inner = "python3 -c %s %s %s %s %s %s" % (
+                    shlex.quote(decoder),
+                    shlex.quote(str(player.target_port)),
+                    shlex.quote(login_path),
+                    shlex.quote(kind),
+                    shlex.quote(user),
+                    shlex.quote(pw),
+                )
+                proc = await asyncio.create_subprocess_shell(
+                    "docker exec %s sh -lc %s" % (shlex.quote(player.target_container), shlex.quote(inner)),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=12)
+                return proc.returncode == 0
+
             try:
                 health_ok = await _http_ok(health_path)
             except Exception:
@@ -495,11 +555,9 @@ class SLAChecker:
             if health_ok:
                 if login_path:
                     try:
-                        login_ok = await _http_ok(
-                            login_path,
-                            method=player.sla_login_method,
-                            body=player.sla_login_body,
-                            liveness_only=True,
+                        # player.sla_login_method carries the login KIND (form/json/csrf_*).
+                        login_ok = await _login_ok(
+                            login_path, player.sla_login_method, player.sla_login_body
                         )
                     except Exception:
                         login_ok = False

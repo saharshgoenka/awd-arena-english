@@ -1,0 +1,4 @@
+=== flash DEFENSE_ONLY on S1: 15min defense + 3min oracle attack ===
+match_id=match_1783826488_e95ddc06
+S1 match_1783826488_e95ddc06: ?/5  -> docs/benchmark/smoke-defense-flash-s1/matches/deepseek_v4_flash__S1__match_1783826488_e95ddc06
+DEFENSE_SMOKE_DONE match_1783826488_e95ddc06

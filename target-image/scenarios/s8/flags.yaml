@@ -3,20 +3,20 @@ flags:
     env: FLAG_1
     owasp: A01
     category: broken_access_control
-    hint: "An admin handler registered on the bare router runs no auth middleware. Move it behind the authenticated group and check the role."
+    hint: "Object detail routes need a per-object owner check; authenticating the caller is not enough."
   - id: flag_2
     env: FLAG_2
-    owasp: A02
+    owasp: A05
     category: security_misconfiguration
-    hint: "expvar's /debug/vars handler dumps published vars (here, the whole environment). It belongs in development only."
+    hint: "Production debug dumps should not expose environment-shaped operational tokens."
   - id: flag_3
     env: FLAG_3
-    owasp: A04
+    owasp: A02
     category: cryptographic_failures
-    hint: "A column named password_hash implies bcrypt. crypto/md5 is not bcrypt, and the digest is exposed via /profile/token."
+    hint: "Encrypting multiple exports with the same XOR keystream lets known plaintext recover the vault plaintext."
   - id: flag_4
     env: FLAG_4
-    owasp: A05
+    owasp: A03
     category: injection
     hint: "String concatenation into db.Query is SQLi. Use a bound ? placeholder."
   - id: flag_5

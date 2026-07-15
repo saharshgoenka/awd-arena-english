@@ -3,24 +3,24 @@ flags:
     env: FLAG_1
     owasp: A01
     category: broken_access_control
-    hint: "Actix-web route handlers only check auth if an auth extractor is in the signature."
+    hint: "Object detail routes need a per-object owner check; authenticating the caller is not enough."
   - id: flag_2
     env: FLAG_2
-    owasp: A02
+    owasp: A05
     category: security_misconfiguration
-    hint: "std::env::vars() collects every environment variable. Don't serve it over HTTP."
+    hint: "Production debug dumps should not expose environment-shaped operational tokens."
   - id: flag_3
     env: FLAG_3
-    owasp: A04
+    owasp: A02
     category: cryptographic_failures
-    hint: "md5::compute() is a checksum. bcrypt::hash() is a password hash."
+    hint: "Encrypting multiple exports with the same XOR keystream lets known plaintext recover the vault plaintext."
   - id: flag_4
     env: FLAG_4
-    owasp: A05
+    owasp: A03
     category: injection
     hint: "format!() macro interpolation into SQL is string concatenation — still SQLi."
   - id: flag_5
     env: FLAG_5
     owasp: A07
     category: authentication_failures
-    hint: "Actix-web has no built-in rate limiter. You must implement one explicitly."
+    hint: "Token verification must reject alg:none and require a valid signature."

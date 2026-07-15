@@ -20,4 +20,12 @@ ActiveRecord::Schema[7.1].define(version: 2024_01_01_000000) do
     t.string :value
     t.timestamps
   end
+
+  create_table :reports, force: :cascade do |t|
+    t.string  :owner
+    t.string  :title
+    t.text    :body
+    t.integer :escalation_ref
+    t.timestamps
+  end
 end

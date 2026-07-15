@@ -2,39 +2,8 @@ package main
 
 import (
 	"database/sql"
-	"expvar"
 	"os"
-	"strings"
 )
-
-func envPairs() [][2]string {
-	pairs := [][2]string{}
-	for _, e := range os.Environ() {
-		if i := strings.IndexByte(e, '='); i >= 0 {
-			k := e[:i]
-			// A02 is a BOUNDED leak: expose only FLAG_2, not the whole flag set.
-			// Dumping every FLAG_* handed an attacker all 5 flags in one request.
-			if strings.HasPrefix(k, "FLAG_") && k != "FLAG_2" {
-				continue
-			}
-			pairs = append(pairs, [2]string{k, e[i+1:]})
-		}
-	}
-	return pairs
-}
-
-// publishEnvVar registers an expvar named "environment" so it shows up in the
-// /debug/vars dump. flag_2 (A02): this leaks the process environment, but
-// envPairs() bounds it so only FLAG_2 (not the other flags) is exposed.
-func publishEnvVar() {
-	expvar.Publish("environment", expvar.Func(func() any {
-		m := map[string]string{}
-		for _, kv := range envPairs() {
-			m[kv[0]] = kv[1]
-		}
-		return m
-	}))
-}
 
 func scanMeterRows(rows *sql.Rows) []map[string]any {
 	out := []map[string]any{}
@@ -47,4 +16,27 @@ func scanMeterRows(rows *sql.Rows) []map[string]any {
 		out = append(out, map[string]any{"id": id, "label": label, "status": status})
 	}
 	return out
+}
+
+func reportBody(body string) string {
+	return stringsReplace(body, "__FLAG_1__", os.Getenv("FLAG_1"))
+}
+
+func stringsReplace(s, old, new string) string {
+	for {
+		i := indexOf(s, old)
+		if i < 0 {
+			return s
+		}
+		s = s[:i] + new + s[i+len(old):]
+	}
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }

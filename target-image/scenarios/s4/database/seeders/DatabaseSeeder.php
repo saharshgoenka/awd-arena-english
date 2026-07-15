@@ -35,7 +35,10 @@ class DatabaseSeeder extends Seeder
                 'username'        => 'analyst',
                 'email'           => 'analyst@shopadmin.local',
                 'password'        => Hash::make('catalogTemp2024'),
-                'password_legacy' => md5('catalogTemp2024'),
+                // flag_3 (PROTOTYPE): analyst legacy hash is a "0e" PHP magic hash
+                // (md5('240610708')='0e4620...'). Exploitable via == type juggling on
+                // the legacy-login endpoint — no offline cracking required.
+                'password_legacy' => md5('240610708'),
                 'role'            => 'user',
             ],
             [
@@ -66,6 +69,22 @@ class DatabaseSeeder extends Seeder
         ];
         foreach ($products as $p) {
             DB::table('products')->updateOrInsert(['sku' => $p['sku']], $p);
+        }
+
+        // Seed per-user reports (flag_1: A01 IDOR/BOLA). Each user owns a report at a
+        // non-guessable id. The staff (low-priv) report references the admin escalation
+        // report via `escalation_ref`; that escalation report carries the placeholder
+        // `__FLAG_1__`, substituted from FLAG_1 at serve time (never persisted, so the
+        // flag_4 UNION SQLi cannot dump it). Ids are large and non-sequential so blind
+        // enumeration does not reach the winning id.
+        $reports = [
+            ['id' => 1004,  'owner' => 'admin',   'title' => 'Ops runbook index',       'body' => 'Links to on-call runbooks and deploy checklists.',                                                            'escalation_ref' => null],
+            ['id' => 1005,  'owner' => 'analyst', 'title' => 'Catalog cleanup notes',    'body' => 'Action items from the catalog data-quality review; nothing blocking.',                                       'escalation_ref' => null],
+            ['id' => 1006,  'owner' => 'staff',   'title' => 'Q3 access review',         'body' => 'Reviewing privileged access grants for Q3. The approval record is tracked as escalation report #90312.',       'escalation_ref' => 90312],
+            ['id' => 90312, 'owner' => 'admin',   'title' => 'Access escalation grant',  'body' => 'Q3 privileged access escalation approved. Restricted operations token: __FLAG_1__',                             'escalation_ref' => null],
+        ];
+        foreach ($reports as $r) {
+            DB::table('reports')->updateOrInsert(['id' => $r['id']], $r);
         }
     }
 }

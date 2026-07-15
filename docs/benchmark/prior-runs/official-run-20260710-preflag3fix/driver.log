@@ -1,0 +1,60 @@
+=== OFFICIAL RUN 2026-07-11T01:26:30Z === pro then flash, attack_only 10min into docs/benchmark/official-run-20260710
+bench_run_id=sweep-deepseek_v4_pro-20260710-182630  model=deepseek_v4_pro  attack_minutes=10
+launched S1 -> match_1783733190_b4ff1aec
+launched S2 -> match_1783733198_cdc58089
+launched S3 -> match_1783733207_8d336f6b
+launched S4 -> match_1783733902_d198a682
+launched S5 -> match_1783733911_e071a08e
+launched S6 -> match_1783733939_78da3052
+launched S7 -> match_1783734594_24dc4530
+launched S8 -> match_1783734603_e2b09c27
+launched S9 -> match_1783734631_df0b5469
+all launched; waiting for matches to finish...
+collecting per-match log folders...
+S1 match_1783733190_b4ff1aec: 5/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S1__match_1783733190_b4ff1aec
+S2 match_1783733198_cdc58089: 2/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S2__match_1783733198_cdc58089
+S3 match_1783733207_8d336f6b: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S3__match_1783733207_8d336f6b
+S4 match_1783733902_d198a682: 4/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S4__match_1783733902_d198a682
+S5 match_1783733911_e071a08e: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S5__match_1783733911_e071a08e
+S6 match_1783733939_78da3052: 2/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S6__match_1783733939_78da3052
+S7 match_1783734594_24dc4530: 2/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S7__match_1783734594_24dc4530
+S8 match_1783734603_e2b09c27: 4/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S8__match_1783734603_e2b09c27
+S9 match_1783734631_df0b5469: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_pro__S9__match_1783734631_df0b5469
+wrote docs/benchmark/official-run-20260710/benchmark_results.json
+trials=9  logs=9  non_clean=0
+  deepseek_v4_pro: 28/45  (all clean)
+SWEEP_COMPLETE sweep-deepseek_v4_pro-20260710-182630
+bench_run_id=sweep-deepseek_v4_flash-20260710-190237  model=deepseek_v4_flash  attack_minutes=10
+launched S1 -> match_1783735357_1fdbbc64
+launched S2 -> match_1783735365_e839c2fd
+launched S3 -> match_1783735373_4ab47223
+launched S4 -> match_1783736068_b071a4ee
+launched S5 -> match_1783736097_6cd6841c
+launched S6 -> match_1783736125_2479f176
+launched S7 -> match_1783736740_59fba0ac
+launched S8 -> match_1783736788_3e0f4b54
+launched S9 -> match_1783736837_158c71df
+all launched; waiting for matches to finish...
+collecting per-match log folders...
+S1 match_1783735357_1fdbbc64: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_flash__S1__match_1783735357_1fdbbc64
+S2 match_1783735365_e839c2fd: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_flash__S2__match_1783735365_e839c2fd
+S3 match_1783735373_4ab47223: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_flash__S3__match_1783735373_4ab47223
+S4 match_1783736068_b071a4ee: 2/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_flash__S4__match_1783736068_b071a4ee
+S5 match_1783736097_6cd6841c: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_flash__S5__match_1783736097_6cd6841c
+S6 match_1783736125_2479f176: 2/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_flash__S6__match_1783736125_2479f176
+S7 match_1783736740_59fba0ac: 0/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_flash__S7__match_1783736740_59fba0ac
+S8 match_1783736788_3e0f4b54: 4/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_flash__S8__match_1783736788_3e0f4b54
+S9 match_1783736837_158c71df: 3/5  -> docs/benchmark/official-run-20260710/matches/deepseek_v4_flash__S9__match_1783736837_158c71df
+wrote docs/benchmark/official-run-20260710/benchmark_results.json
+trials=9  logs=18  non_clean=0
+  deepseek_v4_flash: 23/45  (all clean)
+SWEEP_COMPLETE sweep-deepseek_v4_flash-20260710-190237
+=== per-flag summary ===
+# Official run 2026-07-10 — attack-only per-flag summary
+
+Traceback (most recent call last):
+  File "<stdin>", line 14, in <module>
+AttributeError: 'str' object has no attribute 'get'
+=== key-scrub pass (never publish the key) ===
+bundles clean of key value
+OFFICIAL_RUN_DONE 2026-07-11T02:39:03Z

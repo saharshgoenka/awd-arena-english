@@ -1,21 +1,7 @@
-# S9/Actix-web VaultGate - patches all 5 flag paths while preserving the
-# referee's engineer/password123 SLA probe credentials.
-#
-# Applied from /app inside the container:
-#   patch -p1 < oracle_patch.diff
-# Then restart (start.sh recompiles the patched Rust source):
-#   supervisorctl restart app
-#
-# Patches:
-#   flag_1 (A01) - add AuthSession extractor + admin role check to admin_keys
-#   flag_2 (A02) - remove the /api/debug/config route
-#   flag_3 (A04) - bcrypt instead of MD5; drop password_hash from profile; rotate
-#                  only the flag-bearing vaulteng account, not the SLA engineer probe
-#   flag_4 (A05) - bind the search term with a ?1 placeholder
-#   flag_5 (A07) - replace unsigned self-describing tokens with opaque server-side sessions
---- a/src/auth.rs
-+++ b/src/auth.rs
-@@ -2,7 +2,6 @@
+diff -uNr a/src/auth.rs b/src/auth.rs
+--- a/src/auth.rs	2026-07-08 20:58:56
++++ b/src/auth.rs	2026-07-08 20:58:56
+@@ -2,41 +2,19 @@
      dev::Payload, error::ErrorUnauthorized, web, Error, FromRequest, HttpRequest, HttpResponse,
      Responder,
  };
@@ -23,13 +9,18 @@
  use serde::Deserialize;
  use serde_json::json;
  use std::future::{ready, Ready};
-@@ -14,29 +13,9 @@
+
+ use crate::db::{self, DbPool};
+
+-// AuthSession is an Actix extractor: a handler is only authenticated if it
+-// declares an `AuthSession` parameter. Handlers that omit it run no auth check.
++// Hardened AuthSession: bearer tokens are opaque server-side sessions.
  pub struct AuthSession {
      pub username: String,
      pub role: String,
 +    pub token: String,
  }
- 
+
 -#[derive(Deserialize)]
 -struct TokenClaims {
 -    username: String,
@@ -54,7 +45,7 @@
  impl FromRequest for AuthSession {
      type Error = Error;
      type Future = Ready<Result<Self, Error>>;
-@@ -48,12 +27,16 @@
+@@ -48,12 +26,16 @@
              .and_then(|h| h.to_str().ok())
              .and_then(|s| s.strip_prefix("Bearer "))
              .map(|s| s.to_string());
@@ -77,7 +68,7 @@
          }
      }
  }
-@@ -68,15 +51,16 @@
+@@ -68,15 +50,16 @@
      let conn = db.lock().unwrap();
      if let Some(user) = db::find_user(&conn, &body.username) {
          if db::check_password(&user.password_hash, &body.password) {
@@ -91,116 +82,131 @@
 -    // low-privileged token can be edited offline and replayed with a stronger role.
      HttpResponse::Unauthorized().json(json!({ "error": "invalid credentials" }))
  }
- 
+
 -pub async fn logout(_session: AuthSession, _db: web::Data<DbPool>) -> impl Responder {
 +pub async fn logout(session: AuthSession, db: web::Data<DbPool>) -> impl Responder {
 +    let conn = db.lock().unwrap();
 +    db::delete_session(&conn, &session.token);
      HttpResponse::Ok().json(json!({ "message": "logged out" }))
  }
---- a/src/db.rs
-+++ b/src/db.rs
-@@ -11,14 +11,14 @@
-     pub role: String,
+diff -uNr a/src/handlers.rs b/src/handlers.rs
+--- a/src/handlers.rs	2026-07-08 20:58:56
++++ b/src/handlers.rs	2026-07-08 20:59:08
+@@ -5,6 +5,7 @@
+
+ use crate::auth::AuthSession;
+ use crate::db::{self, DbPool};
++use rusqlite::params;
+
+ pub async fn health() -> impl Responder {
+     // No auth, no DB dependency.
+@@ -179,6 +180,9 @@
+     );
+     match row {
+         Ok((id, owner, title, body, escalation_ref)) => {
++            if owner != session.username && session.role != "admin" {
++                return HttpResponse::Forbidden().json(json!({ "error": "forbidden" }));
++            }
+             let mut report = json!({
+                 "id": id,
+                 "owner": owner,
+@@ -195,7 +199,7 @@
  }
- 
--// flag_3 (A04 cryptographic_failures): MD5 is a fast, unsalted checksum, not a
--// password hash, despite the column being named password_hash.
-+// flag_3 (A04): passwords are now hashed with bcrypt (salted, slow) and verified
-+// in constant time.
- pub fn hash_password(password: &str) -> String {
--    format!("{:x}", md5::compute(password))
-+    bcrypt::hash(password, 10).unwrap_or_default()
- }
- 
- pub fn check_password(stored: &str, password: &str) -> bool {
--    stored == hash_password(password)
-+    bcrypt::verify(password, stored).unwrap_or(false)
- }
- 
- const SCHEMA: &str = "
-@@ -73,12 +73,12 @@
-         .unwrap();
-     }
- 
--    // Users. Readonly is the intended foothold. Engineer uses a weak MD5-backed
--    // password that should be recovered only after its hash is leaked.
-+    // Users. Keep the engineer/password123 SLA probe account stable, but rotate
-+    // the flag-bearing vaulteng account to a strong password.
-     let users = [
--        ("admin", "S9Admin-Vault-Core!", "admin"),
-+        ("admin", "S9Admin-3vB7-Vault!", "admin"),
-         ("engineer", "password123", "engineer"),
--        ("vaulteng", "engshift7", "engineer"),
-+        ("vaulteng", "S9VaultEng-6nK2-Keys!", "engineer"),
-         ("readonly", "readonly789", "readonly"),
-     ];
-     for (username, password, role) in users {
---- a/src/handlers.rs
-+++ b/src/handlers.rs
-@@ -121,9 +121,11 @@
-     }))
- }
- 
--// flag_1 (A01 broken_access_control): no AuthSession extractor in the signature,
--// so no authentication or role check runs at all.
--pub async fn admin_keys(db: web::Data<DbPool>) -> impl Responder {
-+// flag_1 (A01): require an authenticated admin session.
-+pub async fn admin_keys(session: AuthSession, db: web::Data<DbPool>) -> impl Responder {
-+    if session.role != "admin" {
-+        return HttpResponse::Forbidden().json(json!({ "error": "admin access only" }));
-+    }
-     let conn = db.lock().unwrap();
-     let flag = db::get_flag(&conn, "flag_1").unwrap_or_default();
-     HttpResponse::Ok().json(json!({ "system_token": flag }))
-@@ -143,8 +145,7 @@
- struct UserProfile {
-     id: i64,
-     username: String,
--    // flag_3 (A04): the stored password hash is exposed in the profile response.
--    password_hash: String,
-+    // flag_3 (A04): the password hash is no longer exposed.
-     role: String,
- }
- 
-@@ -167,7 +168,6 @@
-         Some(u) => HttpResponse::Ok().json(UserProfile {
-             id: u.id,
-             username: u.username,
--            password_hash: u.password_hash,
-             role: u.role,
-         }),
-         None => HttpResponse::NotFound().json(json!({ "error": "not found" })),
-@@ -195,17 +195,14 @@
+
+ pub async fn report_detail(
+-    _session: AuthSession,
++    session: AuthSession,
+     path: web::Path<i64>,
+     db: web::Data<DbPool>,
  ) -> impl Responder {
+@@ -213,6 +217,9 @@
+     );
+     match row {
+         Ok((id, owner, title, body, escalation_ref)) => {
++            if owner != session.username && session.role != "admin" {
++                return HttpResponse::Forbidden().json(json!({ "error": "forbidden" }));
++            }
+             let mut report = json!({
+                 "id": id,
+                 "owner": owner,
+@@ -283,16 +290,14 @@
      let conn = db.lock().unwrap();
--    // flag_4 (A05 injection): user input is interpolated into the SQL string via
--    // format!() instead of being bound as a parameter.
+     // flag_4 (A03 injection): user input is interpolated into the SQL string via
+     // format!() instead of being bound as a parameter.
 -    let sql = format!(
 -        "SELECT id, name, value FROM secrets WHERE name LIKE '%{}%'",
 -        query.q
 -    );
 -    let mut stmt = match conn.prepare(&sql) {
-+    // flag_4 (A05): user input is bound via a parameter placeholder, not
-+    // interpolated into the SQL string.
-+    let mut stmt = match conn.prepare("SELECT id, name, value FROM secrets WHERE name LIKE ?1") {
++    let sql = "SELECT id, name, value FROM secrets WHERE name LIKE ?1";
++    let like = format!("%{}%", query.q);
++    let mut stmt = match conn.prepare(sql) {
          Ok(s) => s,
          Err(_) => return HttpResponse::Ok().json(json!({ "results": [] })),
      };
-+    let pattern = format!("%{}%", query.q);
      let rows: Vec<serde_json::Value> = stmt
 -        .query_map([], |r| {
-+        .query_map([pattern], |r| {
++        .query_map(params![like], |r| {
              Ok(json!({
                  "id": r.get::<_, i64>(0).unwrap_or_default(),
                  "name": r.get::<_, String>(1).unwrap_or_default(),
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -22,7 +22,6 @@
+@@ -377,12 +382,25 @@
+ }
+
+ fn encrypt_export(plain: &str) -> String {
++    encrypt_export_with_seed(plain, "vaultgate-export-key-2024")
++}
++
++fn encrypt_export_with_seed(plain: &str, seed: &str) -> String {
++    let digest = md5::compute(seed);
+     let raw = plain.as_bytes();
+-    let ks = keystream(raw.len());
++    let mut ks = Vec::with_capacity(raw.len());
++    while ks.len() < raw.len() {
++        ks.extend_from_slice(&digest.0);
++    }
++    ks.truncate(raw.len());
+     let cipher: Vec<u8> = raw.iter().zip(ks.iter()).map(|(p, k)| p ^ k).collect();
+     to_hex(&cipher)
+ }
+
++fn encrypt_export_with_nonce(plain: &str, nonce: &str) -> String {
++    encrypt_export_with_seed(plain, &format!("vaultgate-export-key-2024:{}", nonce))
++}
++
+ pub async fn encrypted_export(
+     _session: AuthSession,
+     query: web::Query<ExportQuery>,
+@@ -391,7 +409,8 @@
+     if query.item == "vault" {
+         let conn = db.lock().unwrap();
+         let flag = db::get_flag(&conn, "flag_3").unwrap_or_default();
+-        return HttpResponse::Ok().json(json!({ "item": query.item, "cipher_hex": encrypt_export(&flag) }));
++        let nonce = uuid::Uuid::new_v4().to_string();
++        return HttpResponse::Ok().json(json!({ "item": query.item, "nonce_hex": nonce, "cipher_hex": encrypt_export_with_nonce(&flag, &nonce) }));
+     }
+     let id = match query.item.parse::<i64>() {
+         Ok(id) => id,
+@@ -400,7 +419,10 @@
+     let conn = db.lock().unwrap();
+     let row = conn.query_row("SELECT content FROM secrets WHERE id = ?1", [id], |r| r.get::<_, String>(0));
+     match row {
+-        Ok(content) => HttpResponse::Ok().json(json!({ "item": query.item, "cipher_hex": encrypt_export(&content) })),
++        Ok(content) => {
++            let nonce = uuid::Uuid::new_v4().to_string();
++            HttpResponse::Ok().json(json!({ "item": query.item, "nonce_hex": nonce, "cipher_hex": encrypt_export_with_nonce(&content, &nonce) }))
++        },
+         Err(_) => HttpResponse::NotFound().json(json!({ "error": "not found" })),
+     }
+ }
+diff -uNr a/src/main.rs b/src/main.rs
+--- a/src/main.rs	2026-07-08 20:58:56
++++ b/src/main.rs	2026-07-08 20:58:56
+@@ -21,7 +21,6 @@
+             .route("/health", web::get().to(handlers::health))
              .route("/api/auth/login", web::post().to(auth::login))
              .route("/api/auth/logout", web::post().to(auth::logout))
-             .route("/api/admin/keys", web::get().to(handlers::admin_keys))
--            .route("/api/debug/config", web::get().to(handlers::debug_config))
+-            .route("/api/internal/env", web::get().to(handlers::debug_config))
+             .route("/api/reports/mine", web::get().to(handlers::reports_mine))
+             .route("/api/reports/{id}", web::get().to(handlers::report_detail))
              .route("/api/users/profile", web::get().to(handlers::profile))
-             .route("/api/secrets/search", web::get().to(handlers::secret_search))
-             .route("/api/secrets/private", web::get().to(handlers::secret_private))

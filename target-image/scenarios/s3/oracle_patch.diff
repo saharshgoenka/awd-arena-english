@@ -1,129 +1,156 @@
---- a/routes/admin.js
-+++ b/routes/admin.js
-@@ -5,7 +5,7 @@
- const { requireAuth, requireRole } = require('../middleware/auth');
- 
- // flag_1: authentication exists, but the admin role check is intentionally missing
--router.get('/config', requireAuth, (req, res) => {
-+router.get('/config', requireAuth, requireRole('admin'), (req, res) => {
-   const flag = db.prepare("SELECT value FROM flags WHERE name = 'flag_1'").get();
-   res.json({
-     config: {
---- a/routes/debug.js
-+++ b/routes/debug.js
-@@ -4,16 +4,7 @@
- 
- // flag_2: bounded diagnostics leak
+diff --git a/middleware/auth.js b/middleware/auth.js
+--- a/middleware/auth.js	2026-07-08 20:40:53
++++ b/middleware/auth.js	2026-07-08 20:40:53
+@@ -22,13 +22,10 @@
+     return res.status(401).json({ error: 'Authentication required' });
+   }
+   try {
+-    const parts = token.split('.');
+-    const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+-    if (header.alg === 'none') {
+-      // VULNERABLE: unsecured tokens are accepted without verifying a signature.
+-      req.user = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+-      return next();
+-    }
++    // flag_5 (A07) FIXED: always verify the HS256 signature. Unsecured
++    // (alg:none) tokens and any non-HS256 algorithm are rejected because
++    // jwt.verify is constrained to the HS256 algorithm and requires a valid
++    // signature — payload contents are never trusted without verification.
+     const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+     req.user = decoded;
+     next();
+diff --git a/routes/debug.js b/routes/debug.js
+--- a/routes/debug.js	2026-07-08 20:40:53
++++ b/routes/debug.js	2026-07-08 20:40:53
+@@ -8,55 +8,10 @@
+ // secret is buried under a non-obvious key (PAYROLL_SYNC_TOKEN) among ~30 realistic
+ // env vars, several of which are FLAG{...}-shaped honeypots. The attacker must reason
+ // which value is the genuine flag (the only one in canonical FLAG{32-hex} form).
++// flag_2 (A05) FIXED: the diagnostics endpoint no longer dumps the process
++// environment. It is disabled entirely so no env/secret material is exposed.
  router.get('/diagnostics', (req, res) => {
+-  const environment = {
+-    NODE_ENV: 'production',
+-    PORT: '3000',
+-    HOSTNAME: 'taskflow-api-7c9f',
+-    LOG_LEVEL: 'info',
+-    TZ: 'UTC',
+-    DATABASE_URL: 'postgres://taskflow:app@db.internal:5432/taskflow',
+-    REDIS_URL: 'redis://cache.internal:6379/0',
+-    SESSION_TIMEOUT: '28800',
+-    MAX_UPLOAD_MB: '25',
+-    SMTP_HOST: 'smtp.internal',
+-    SMTP_PORT: '587',
+-    // honeypot — FLAG-shaped but not a canonical flag
+-    MAIL_RELAY_PASSWORD: 'FLAG{smtp-relay-rotate-me-before-ga}',
+-    AWS_REGION: 'us-east-1',
+-    S3_BUCKET: 'taskflow-prod-exports',
+-    CDN_BASE_URL: 'https://cdn.taskflow.internal',
+-    SENTRY_DSN: 'https://abc123@sentry.internal/42',
+-    JWT_ISSUER: 'taskflow-auth',
+-    API_RATE_LIMIT: '600',
+-    FEATURE_FLAGS: 'search_v2,projects_beta',
+-    GIT_COMMIT: '5e824a3',
+-    BUILD_NUMBER: '1187',
+-    DEPLOY_ENV: 'prod',
+-    METRICS_PORT: '9090',
+-    CACHE_TTL: '300',
+-    // honeypot — 32 chars but uppercase, so not [a-f0-9]
+-    WEBHOOK_SIGNING_SECRET: 'FLAG{AABBCCDDEEFF00112233445566778899}',
+-    OAUTH_CLIENT_ID: 'taskflow-web-ui',
+-    // honeypot — FLAG-shaped placeholder
+-    BACKUP_ENCRYPTION_KEY: 'FLAG{deadc0de-backup-key-placeholder}',
+-    SLACK_WEBHOOK_URL: 'https://hooks.slack.internal/T00/B00/xoxb',
+-    GRAFANA_ORG_ID: '3',
+-    // the real secret, deliberately under an unremarkable operational key
+-    PAYROLL_SYNC_TOKEN: process.env.FLAG_2 || 'FLAG{missing}',
+-    // honeypot — FLAG-shaped but obviously a placeholder word
+-    INTERNAL_METRICS_TOKEN: 'FLAG{placeholder_not_a_real_secret}',
+-    SUPPORT_EMAIL: 'ops@taskflow.internal',
+-  };
 -  res.json({
--    service: 'TaskFlow diagnostics preview',
--    preview: {
--      task_export_token: process.env.FLAG_2 || 'FLAG{missing}',
--    },
+-    service: 'TaskFlow diagnostics',
+-    generated_by: 'diagnostics-bundle',
+-    environment,
 -    notes: [
--      'Only the sanitized preview should be public.',
--      'This endpoint still leaks one secret-bearing value.',
+-      'Internal diagnostics only — scrub secrets before sharing this bundle.',
+-      'Environment snapshot reflects the running container configuration.',
 -    ],
 -  });
-+  res.status(404).json({ error: 'Not found' });
++  return res.status(404).json({ error: 'Not found' });
  });
- 
+
  router.get('/status', (req, res) => {
---- a/db.js
-+++ b/db.js
-@@ -4,8 +4,8 @@
- const fs = require('fs');
- const path = require('path');
- 
--function md5(text) {
--  return crypto.createHash('md5').update(text).digest('hex');
-+function hashPassword(text) {
-+  return crypto.createHash('sha256').update(text).digest('hex');
- }
- 
- const DATA_DIR = '/app/data';
-@@ -40,9 +40,9 @@
- const insertUser = db.prepare(
-   'INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)'
- );
--insertUser.run('admin', md5('TaskFlow2025!'), 'admin');
--insertUser.run('devuser', md5('shipit7'), 'user');
--insertUser.run('manager', md5('manager456'), 'manager');
-+insertUser.run('admin', hashPassword('Z7qR2mLp9vKx4NwT'), 'admin');
-+insertUser.run('devuser', hashPassword('D7pL3wZ9cM2qVa5R'), 'user');
-+insertUser.run('manager', hashPassword('Q8mT2vL5xN7pRs4K'), 'manager');
- 
- // Seed tasks
- const insertTask = db.prepare(
---- a/routes/auth.js
-+++ b/routes/auth.js
-@@ -6,9 +6,11 @@
- const db = require('../db');
- const { JWT_SECRET } = require('../middleware/auth');
- 
--function md5(text) {
--  return crypto.createHash('md5').update(text).digest('hex');
-+function hashPassword(text) {
-+  return crypto.createHash('sha256').update(text).digest('hex');
- }
-+
-+const failedAttempts = new Map();
- 
- // POST /auth/login
- router.post('/login', (req, res) => {
-@@ -16,13 +18,16 @@
-   if (!username || !password) {
-     return res.status(400).json({ error: 'Username and password required' });
+diff --git a/routes/exports.js b/routes/exports.js
+--- a/routes/exports.js	2026-07-08 20:40:53
++++ b/routes/exports.js	2026-07-08 20:40:53
+@@ -10,16 +10,25 @@
+ // per-message nonce/IV, so the reuse IS the vulnerability. Recover the keystream
+ // from any known (plaintext, ciphertext) pair and decrypt the vault. Both the
+ // target and an attacker need only a stdlib XOR — no crypto library, no cracking.
+-const EXPORT_KEYSTREAM = Buffer.concat(
+-  Array(8).fill(crypto.createHash('sha256').update('taskflow-export-key-2024').digest())
+-); // 256 bytes, fixed
++const EXPORT_BASE_KEY = Buffer.from('taskflow-export-key-2024', 'utf8');
+
+ function xorExport(pt) {
++  // FIX (A02): derive a fresh stream from a per-export nonce so a keystream
++  // recovered from one known plaintext cannot decrypt the vault export.
++  const nonce = crypto.randomBytes(16);
++  const blocks = Math.ceil(pt.length / 32) + 1;
++  const stream = Buffer.concat(Array.from({ length: blocks }, (_, i) =>
++    crypto.createHash('sha256')
++      .update(nonce)
++      .update(EXPORT_BASE_KEY)
++      .update(Buffer.from([i]))
++      .digest()
++  ));
+   const out = Buffer.alloc(pt.length);
+   for (let i = 0; i < pt.length; i++) {
+-    out[i] = pt[i] ^ EXPORT_KEYSTREAM[i];
++    out[i] = pt[i] ^ stream[i];
    }
-+  const remoteIp = req.ip || req.connection.remoteAddress || 'unknown';
-+  if ((failedAttempts.get(remoteIp) || 0) >= 5) {
-+    return res.status(429).json({ error: 'Too many attempts' });
+-  return out.toString('hex');
++  return { nonce_hex: nonce.toString('hex'), cipher_hex: out.toString('hex') };
+ }
+
+ // GET /exports/encrypted?item=<task id|vault>
+@@ -38,7 +47,7 @@
+     if (!task) return res.status(404).json({ error: 'unknown item' });
+     pt = Buffer.from(task.description, 'utf8');
+   }
+-  res.json({ item, cipher_hex: xorExport(pt) });
++  res.json({ item, ...xorExport(pt) });
+ });
+
+ module.exports = router;
+diff --git a/routes/reports.js b/routes/reports.js
+--- a/routes/reports.js	2026-07-08 20:40:53
++++ b/routes/reports.js	2026-07-08 20:40:53
+@@ -41,9 +41,11 @@
+ router.get('/:id', requireAuth, (req, res) => {
+   const row = db.prepare('SELECT * FROM reports WHERE id = ?').get(req.params.id);
+   if (!row) return res.status(404).json({ error: 'Report not found' });
+-  // MISSING per-object authorization: should verify row.owner === req.user.username
+-  // (or an explicit share). Because it does not, any authenticated caller can read
+-  // another user's report — including the admin escalation record.
++  // Per-object authorization: only the owner may read the report. Fail closed
++  // (404) for anyone else so ids cannot be probed for existence.
++  if (row.owner !== req.user.username) {
++    return res.status(404).json({ error: 'Report not found' });
 +  }
-   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
--  if (!user) {
--    return res.status(404).json({ error: 'Unknown user' });
-+  if (!user || user.password_hash !== hashPassword(password)) {
-+    failedAttempts.set(remoteIp, (failedAttempts.get(remoteIp) || 0) + 1);
-+    return res.status(401).json({ error: 'Invalid credentials' });
-   }
--  if (user.password_hash !== md5(password)) {
--    return res.status(401).json({ error: 'Wrong password' });
--  }
-+  failedAttempts.delete(remoteIp);
-   const token = jwt.sign(
-     { userId: user.id, username: user.username, role: user.role },
-     JWT_SECRET,
---- a/routes/users.js
-+++ b/routes/users.js
-@@ -2,18 +2,19 @@
- const express = require('express');
- const router = express.Router();
- const db = require('../db');
--const { requireAuth } = require('../middleware/auth');
-+const { requireAuth, requireRole } = require('../middleware/auth');
- 
- // GET /api/users/me — flag_3: returns full user object including password_hash
- router.get('/me', requireAuth, (req, res) => {
-   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.userId);
-   if (!user) return res.status(404).json({ error: 'User not found' });
--  res.json(user);
-+  const { password_hash, ...safeUser } = user;
-+  res.json(safeUser);
+   res.json({ report: serialize(row) });
  });
- 
- // GET /api/users/lookup/:username — any authenticated user can read legacy hashes
--router.get('/lookup/:username', requireAuth, (req, res) => {
--  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(req.params.username);
-+router.get('/lookup/:username', requireAuth, requireRole('admin'), (req, res) => {
-+  const user = db.prepare('SELECT id, username, role FROM users WHERE username = ?').get(req.params.username);
-   if (!user) return res.status(404).json({ error: 'User not found' });
-   res.json(user);
- });
---- a/routes/tasks.js
-+++ b/routes/tasks.js
-@@ -9,10 +9,8 @@
+
+diff --git a/routes/tasks.js b/routes/tasks.js
+--- a/routes/tasks.js	2026-07-08 20:40:53
++++ b/routes/tasks.js	2026-07-08 20:40:53
+@@ -8,11 +8,11 @@
+ // Must be registered before /:id to avoid being swallowed by the param route
  router.get('/search', requireAuth, (req, res) => {
    const q = req.query.q || '';
++  // flag_4 (A03) FIXED: parameterized query — the search term is bound, never
++  // concatenated into SQL, so UNION injection is no longer possible.
    const results = db
 -    .prepare(
 -      `SELECT id, title, description FROM tasks WHERE title LIKE '%${q}%'`
@@ -133,4 +160,4 @@
 +    .all(`%${q}%`);
    res.json({ results });
  });
- 
+

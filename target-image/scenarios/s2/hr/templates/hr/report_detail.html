@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head><title>PeopleOps — Performance Report</title></head>
+<body style="font-family:sans-serif;max-width:900px;margin:40px auto">
+<h2>{{ report.title }}</h2>
+<table border="1" cellpadding="6">
+<tr><td>Owner</td><td>{{ report.owner.username }}</td></tr>
+<tr><td>Classification</td><td>{{ report.classification }}</td></tr>
+</table>
+<p>{{ report.body }}</p>
+{% if report.reviewer_report_id %}
+<p>Reviewer report id: {{ report.reviewer_report_id }}
+   (<a href="/hr/reports/{{ report.reviewer_report_id }}/">open consolidated review</a>)</p>
+{% endif %}
+{% if flag %}
+<p>Restricted management token: <code>{{ flag }}</code></p>
+{% endif %}
+<p><a href="/hr/reports/">Back to My Reports</a></p>
+</body>
+</html>

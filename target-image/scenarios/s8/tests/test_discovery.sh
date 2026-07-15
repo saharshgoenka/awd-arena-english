@@ -33,9 +33,20 @@ grep -q "meters" "$TMP_DIR/api.json"
 grep -q "bearer" "$TMP_DIR/api.json"
 grep -q '"status":"ok"' "$TMP_DIR/status.json"
 
-if grep -R -E 'FLAG[{]|gridpulse-admin-2024|operator789|view123|/debug/vars|/admin/settings|/profile/vault' "$TMP_DIR"; then
+grep -q "assisted mode" "$TMP_DIR/api.json"
+grep -q "/admin/metrics" "$TMP_DIR/api.json"
+grep -q "/reports/{id}" "$TMP_DIR/api.json"
+grep -q "/exports/encrypted" "$TMP_DIR/api.json"
+grep -q "viewer / view123" "$TMP_DIR/help.html"
+
+if grep -q "/debug/env" "$TMP_DIR/api.json"; then
+  echo "[FAIL] unadvertised debug path leaked in discovery"
+  exit 1
+fi
+
+if grep -R -E 'FLAG[{]|gridpulse-admin-2024|operator789' "$TMP_DIR"; then
   echo "[FAIL] discovery surface leaked sensitive implementation details"
   exit 1
 fi
 
-echo "[PASS] S8 discovery surfaces are reachable and non-spoiling."
+echo "[PASS] S8 assisted discovery surfaces are reachable and bounded."

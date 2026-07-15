@@ -83,11 +83,11 @@ func apiDiscoveryHandler(c *gin.Context) {
 			{"method": "GET", "path": "/about", "purpose": "service overview"},
 			{"method": "GET", "path": "/help", "purpose": "operator support notes"},
 			{"method": "POST", "path": "/login", "purpose": "create an authenticated API token"},
-			{"method": "GET", "path": "/debug/vars", "purpose": "runtime vars"},
-			{"method": "GET", "path": "/admin/settings", "purpose": "admin settings"},
+			{"method": "GET", "path": "/reports/mine", "purpose": "current user's report with linked escalation reference"},
+			{"method": "GET", "path": "/reports/{id}", "purpose": "report detail by id"},
 			{"method": "GET", "path": "/admin/metrics", "purpose": "admin metrics"},
 			{"method": "GET", "path": "/meters/search?q=<term>", "purpose": "meter search"},
-			{"method": "GET", "path": "/profile/vault", "purpose": "profile vault"},
+			{"method": "GET", "path": "/exports/encrypted?item=<id|vault>", "purpose": "encrypted meter or vault export"},
 		},
 		"resources": []gin.H{
 			{
@@ -98,9 +98,15 @@ func apiDiscoveryHandler(c *gin.Context) {
 			},
 			{
 				"name":        "meters",
-				"description": "meter list, detail, and text search",
+				"description": "meter list, detail, text search, and encrypted export",
 				"requires":    "bearer token",
-				"routes":      []string{"/meters", "/meter/{id}", "/meters/search?q=<term>"},
+				"routes":      []string{"/meters", "/meter/{id}", "/meters/search?q=<term>", "/exports/encrypted?item=<id|vault>"},
+			},
+			{
+				"name":        "reports",
+				"description": "current-user report and referenced report detail",
+				"requires":    "bearer token",
+				"routes":      []string{"/reports/mine", "/reports/{id}"},
 			},
 		},
 		"notes": []string{

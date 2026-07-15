@@ -46,19 +46,19 @@ OPERATOR_TOKEN=$(curl -sf -X POST "$BASE_URL/login" \
   -d '{"username":"operator","password":"operator789"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 [ -n "$OPERATOR_TOKEN" ] || { echo "[FAIL] operator SLA login missing"; exit 1; }
 
-STATUS=$(curl -s -o /tmp/s8-operator-vault.out -w "%{http_code}" \
-  -H "Authorization: Bearer $OPERATOR_TOKEN" \
-  "$BASE_URL/profile/vault")
-[ "$STATUS" = "403" ] || { echo "[FAIL] SLA operator account should not directly reach flag_3"; exit 1; }
-
 STATUS=$(curl -s -o /tmp/s8-admin.out -w "%{http_code}" \
   -H "Authorization: Bearer $VIEWER_TOKEN" \
   "$BASE_URL/admin/settings")
-[ "$STATUS" = "200" ] || { echo "[FAIL] admin settings should be low-priv reachable"; exit 1; }
+[ "$STATUS" = "403" ] || { echo "[FAIL] admin settings should reject low-priv users"; exit 1; }
 
-PROFILE=$(curl -sf -H "Authorization: Bearer $VIEWER_TOKEN" \
-  "$BASE_URL/profile/token?username=lineoperator")
-echo "$PROFILE" | grep -q '"legacy_token"' || { echo "[FAIL] viewer cannot leak operator hash"; exit 1; }
+REPORT=$(curl -sf -H "Authorization: Bearer $VIEWER_TOKEN" "$BASE_URL/reports/mine")
+echo "$REPORT" | grep -q '"escalation_ref"' || { echo "[FAIL] viewer report does not expose escalation_ref"; exit 1; }
+
+METER=$(curl -sf -H "Authorization: Bearer $VIEWER_TOKEN" "$BASE_URL/meter/1")
+echo "$METER" | grep -q '"content"' || { echo "[FAIL] meter detail lacks known plaintext content"; exit 1; }
+
+EXPORT=$(curl -sf -H "Authorization: Bearer $VIEWER_TOKEN" "$BASE_URL/exports/encrypted?item=1")
+echo "$EXPORT" | grep -q '"cipher_hex"' || { echo "[FAIL] encrypted export missing cipher_hex"; exit 1; }
 
 STATUS=$(curl -s -o /tmp/s8-search.out -w "%{http_code}" \
   "$BASE_URL/meters/search?q=test")
@@ -117,9 +117,9 @@ print(len(json.loads(lines[start:]).get('flags_captured', [])) if start != -1 el
 echo "[PASS] Patched: $CAPTURED/5 captured."
 
 echo "[test] Verifying /debug/vars is removed..."
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/debug/vars")
-[ "$STATUS" != "200" ] || { echo "[FAIL] /debug/vars still returns 200 after patch"; exit 1; }
-echo "[PASS] /debug/vars returns $STATUS (not 200)."
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/debug/env")
+[ "$STATUS" != "200" ] || { echo "[FAIL] /debug/env still returns 200 after patch"; exit 1; }
+echo "[PASS] /debug/env returns $STATUS (not 200)."
 
 echo "[test] Verifying patched SLA operator login still works..."
 RESP=$(curl -sf -X POST "$BASE_URL/login" \

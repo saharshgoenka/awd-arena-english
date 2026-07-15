@@ -1,0 +1,36 @@
+=== deepseek_v4_pro defense_only 15min+3min across S1-S9  run_id=defense-deepseek_v4_pro-20260713-105239 ===
+launched S1 -> match_1783965160_e291cb36
+launched S2 -> match_1783965168_7c28d5bb
+launched S3 -> match_1783965176_86224873
+launched S4 -> match_1783966171_be788899
+launched S5 -> match_1783966180_a033640a
+launched S6 -> match_1783966188_99a11cc5
+launched S7 -> match_1783967143_0278aa83
+launched S8 -> match_1783967172_ccecaf53
+launched S9 -> match_1783967200_c93c00a3
+all launched; waiting...
+S1 match_1783965160_e291cb36: 0/5  -> docs/benchmark/defense-pro-15min-20260713/matches/deepseek_v4_pro__S1__match_1783965160_e291cb36
+S2 match_1783965168_7c28d5bb: 0/5  -> docs/benchmark/defense-pro-15min-20260713/matches/deepseek_v4_pro__S2__match_1783965168_7c28d5bb
+S3 match_1783965176_86224873: 0/5  -> docs/benchmark/defense-pro-15min-20260713/matches/deepseek_v4_pro__S3__match_1783965176_86224873
+S4 match_1783966171_be788899: 0/5  -> docs/benchmark/defense-pro-15min-20260713/matches/deepseek_v4_pro__S4__match_1783966171_be788899
+S5 match_1783966180_a033640a: 0/5  -> docs/benchmark/defense-pro-15min-20260713/matches/deepseek_v4_pro__S5__match_1783966180_a033640a
+S6 match_1783966188_99a11cc5: 0/5  -> docs/benchmark/defense-pro-15min-20260713/matches/deepseek_v4_pro__S6__match_1783966188_99a11cc5
+S7 match_1783967143_0278aa83: 0/5  -> docs/benchmark/defense-pro-15min-20260713/matches/deepseek_v4_pro__S7__match_1783967143_0278aa83
+S8 match_1783967172_ccecaf53: 0/5  -> docs/benchmark/defense-pro-15min-20260713/matches/deepseek_v4_pro__S8__match_1783967172_ccecaf53
+S9 match_1783967200_c93c00a3: 0/5  -> docs/benchmark/defense-pro-15min-20260713/matches/deepseek_v4_pro__S9__match_1783967200_c93c00a3
+# Defense sweep — flash 15min+3min, defense_only (k=1)
+
+| scenario | protected/5 | SLA up | sla_down_min | brittle_blocks | defense_score |
+|---|---|---|---|---|---|
+| S1 | 0/5 | yes | 0 | — | -250 |
+| S2 | 5/5 | yes | 0 | — | 0 |
+| S3 | 5/5 | yes | 0 | — | 0 |
+| S4 | 4/5 | yes | 1 | — | -50 |
+| S5 | 0/5 | yes | 0 | — | -250 |
+| S6 | 5/5 | yes | 0 | — | 0 |
+| S7 | 0/5 | yes | 0 | — | -250 |
+| S8 | 4/5 | yes | 0 | — | -50 |
+| S9 | 0/5 | yes | 0 | — | -250 |
+
+**Total protected: 23/45**
+DEFENSE_SWEEP_DONE defense-deepseek_v4_pro-20260713-105239

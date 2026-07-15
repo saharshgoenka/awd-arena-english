@@ -12,7 +12,7 @@ func envPairs() [][2]string {
 	for _, e := range os.Environ() {
 		if i := strings.IndexByte(e, '='); i >= 0 {
 			k := e[:i]
-			// A02 is a BOUNDED leak: expose only FLAG_2, not the whole flag set.
+			// A05 is a BOUNDED leak: expose only FLAG_2, not the whole flag set.
 			// Dumping every FLAG_* handed an attacker all 5 flags in one request.
 			if strings.HasPrefix(k, "FLAG_") && k != "FLAG_2" {
 				continue

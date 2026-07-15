@@ -1,149 +1,85 @@
-# S4/Laravel ShopAdmin — auto-generated patch for the secure oracle baseline
-# Apply from the scenario directory with: patch -p1 < oracle_patch.diff
---- a/routes/web.php
-+++ b/routes/web.php
-@@ -2,7 +2,6 @@
- 
- use App\Http\Controllers\AdminController;
- use App\Http\Controllers\AuthController;
--use App\Http\Controllers\DebugController;
- use App\Http\Controllers\DiscoveryController;
- use App\Http\Controllers\ProductController;
- use Illuminate\Support\Facades\Route;
-@@ -16,17 +15,13 @@
- Route::get('/health', fn() => response()->json(['status' => 'ok']));
- 
- Route::get('/login',  [AuthController::class, 'showLogin'])->name('login');
--Route::post('/login', [AuthController::class, 'login']);
-+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
- Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth');
- 
- Route::get('/dashboard', [AuthController::class, 'dashboard'])->middleware('auth');
- 
--Route::get('/admin/panel', [AdminController::class, 'panel'])->middleware('auth');
-+Route::get('/admin/panel', [AdminController::class, 'panel'])->middleware(['auth', 'role:admin']);
- 
--Route::get('/debug/phpinfo', [DebugController::class, 'phpinfo']);
--
--Route::get('/profile/legacy-token', [AuthController::class, 'legacyToken'])->middleware('auth');
--
- Route::middleware('auth')->group(function () {
-     Route::get('/products',              [ProductController::class, 'index']);
-     Route::get('/products/search',       [ProductController::class, 'search']);
---- a/app/Http/Controllers/AuthController.php
-+++ b/app/Http/Controllers/AuthController.php
-@@ -18,14 +18,8 @@
-         $username = $request->input('username', '');
-         $password = $request->input('password', '');
- 
--        // flag_5 vulnerability: separate lookup reveals whether username exists
--        $user = User::where('username', $username)->first();
--        if (!$user) {
--            return back()->withErrors(['login' => 'User not found']);
--        }
--
-         if (!Auth::attempt(['username' => $username, 'password' => $password], false)) {
--            return back()->withErrors(['login' => 'Invalid password']);
-+            return back()->withErrors(['login' => 'Invalid credentials']);
-         }
- 
-         $request->session()->regenerate();
-@@ -45,15 +39,8 @@
-         return view('dashboard');
+diff --git a/app/Http/Controllers/DebugController.php b/app/Http/Controllers/DebugController.php
+--- a/app/Http/Controllers/DebugController.php
++++ b/app/Http/Controllers/DebugController.php
+@@ -16,5 +16,9 @@ class DebugController extends Controller
+     public function phpinfo()
+     {
++        // Diagnostics env dump disabled: it leaked process environment (including
++        // secrets). Endpoint now returns 404 in all environments.
++        abort(404);
++
+         $env = [
+             'APP_NAME'                => 'ShopAdmin',
+             'APP_ENV'                 => 'production',
+diff --git a/app/Http/Controllers/ExportController.php b/app/Http/Controllers/ExportController.php
+--- a/app/Http/Controllers/ExportController.php
++++ b/app/Http/Controllers/ExportController.php
+@@ -19,12 +19,12 @@ class ExportController extends Controller
+-    private function keystream(): string
++    private function keystream(string $item): string
+     {
+-        // sha256("shopadmin-export-key-2024") repeated to 256 bytes, fixed.
+-        return str_repeat(hash('sha256', 'shopadmin-export-key-2024', true), 8);
++        // Patched: derive distinct keystream material per exported item.
++        return str_repeat(hash('sha256', 'shopadmin-export-key-2024:' . $item, true), 8);
      }
  
--    // flag_3 path: authenticated users can request another user's legacy hash.
-     public function legacyToken(Request $request)
+-    private function xorExport(string $pt): string
++    private function xorExport(string $pt, string $item): string
      {
--        $lookup = $request->input('username', $request->user()->username);
--        $user = User::where('username', $lookup)->firstOrFail();
--
--        return response()->json([
--            'username' => $user->username,
--            'legacy_token' => $user->password_legacy,
--        ]);
-+        return response()->json(['legacy_token' => $request->user()->password_legacy]);
+-        $ks = $this->keystream();
++        $ks = $this->keystream($item);
+         $out = '';
+         for ($i = 0, $n = strlen($pt); $i < $n; $i++) {
+             $out .= sprintf('%02x', ord($pt[$i]) ^ ord($ks[$i]));
+@@ -51,3 +51,3 @@ class ExportController extends Controller
+-        return response()->json(['item' => $item, 'cipher_hex' => $this->xorExport($pt)]);
++        return response()->json(['item' => $item, 'cipher_hex' => $this->xorExport($pt, $item)]);
      }
  }
+diff --git a/app/Http/Controllers/ProductController.php b/app/Http/Controllers/ProductController.php
 --- a/app/Http/Controllers/ProductController.php
 +++ b/app/Http/Controllers/ProductController.php
-@@ -18,7 +18,7 @@
+@@ -18,7 +18,7 @@ class ProductController extends Controller
      public function search(Request $request)
      {
          $q = $request->input('q', '');
 -        $results = DB::select("SELECT id, name, description FROM products WHERE name LIKE '%{$q}%'");
-+        $results = DB::select('SELECT id, name, description FROM products WHERE name LIKE ?', ["%{$q}%"]);
++        $results = DB::select("SELECT id, name, description FROM products WHERE name LIKE ?", ['%' . $q . '%']);
          return response()->json(['results' => $results]);
      }
- 
---- a/database/seeders/DatabaseSeeder.php
-+++ b/database/seeders/DatabaseSeeder.php
-@@ -27,16 +27,16 @@
-                 'name'            => 'Admin',
-                 'username'        => 'admin',
-                 'email'           => 'admin@shopadmin.local',
--                'password'        => Hash::make('shopadmin2024'),
--                'password_legacy' => md5('shopadmin2024'),
-+                'password'        => Hash::make('S4Admin-8mQ2-Panel!'),
-+                'password_legacy' => '',
-                 'role'            => 'admin',
-             ],
-             [
-                 'name'            => 'Analyst',
-                 'username'        => 'analyst',
-                 'email'           => 'analyst@shopadmin.local',
--                'password'        => Hash::make('catalogTemp2024'),
--                'password_legacy' => md5('catalogTemp2024'),
-+                'password'        => Hash::make('S4Analyst-6rT3-Catalog!'),
-+                'password_legacy' => '',
-                 'role'            => 'user',
-             ],
-             [
---- a/Dockerfile
-+++ b/Dockerfile
-@@ -9,13 +9,8 @@
-     libsqlite3-dev \
-     && rm -rf /var/lib/apt/lists/*
- 
--# PHP extensions
- RUN docker-php-ext-install pdo pdo_sqlite
--
--# Composer
- COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
--
--# SSH setup
- RUN rm -f /etc/ssh/ssh_host_* && \
-     ssh-keygen -t rsa -b 2048 -f /etc/ssh/ssh_host_rsa_key -N "" && \
-     useradd -m ctf && echo "ctf:ctf" | chpasswd && \
-@@ -25,9 +20,7 @@
- 
- WORKDIR /app
- COPY . .
--
- RUN composer install --no-dev --optimize-autoloader
--
- RUN mkdir -p /app/data \
-              /app/storage/framework/sessions \
-              /app/storage/framework/views \
-@@ -38,11 +31,7 @@
-     chmod -R 777 /app/storage /app/bootstrap/cache && \
-     chmod +x /app/artisan /app/start.sh && \
-     php artisan key:generate --force
--
- RUN rm -f /app/public/.env
--
- COPY supervisord.conf /etc/supervisor/supervisord.conf
--
- EXPOSE 3000 22
--
- CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
---- a/start.sh
-+++ b/start.sh
-@@ -24,7 +24,6 @@
- php artisan migrate --force
- php artisan db:seed --force
- 
--# Wait up to 10s for port 3000 to be free (avoids TIME_WAIT on restart)
- for i in $(seq 1 10); do
-     php -r '$s=@fsockopen("127.0.0.1",3000,$e,$m,0.2);if($s===false){exit(0);}fclose($s);exit(1);' && break || true
-     sleep 1
+ }
+diff --git a/app/Http/Controllers/ReportController.php b/app/Http/Controllers/ReportController.php
+--- a/app/Http/Controllers/ReportController.php
++++ b/app/Http/Controllers/ReportController.php
+@@ -47,8 +47,11 @@ class ReportController extends Controller
+         if (!$row) {
+             return response()->json(['error' => 'Report not found'], 404);
+         }
+-        // MISSING per-object authorization: should verify
+-        // $row->owner === $request->user()->username (or an explicit share).
++        // Per-object authorization: only the owner may read the report. Fail closed
++        // (404) for any other caller so ownership cannot be enumerated.
++        if ($row->owner !== $request->user()->username) {
++            return response()->json(['error' => 'Report not found'], 404);
++        }
+         return response()->json(['report' => $this->serialize($row)]);
+     }
+ }
+diff --git a/app/Support/ApiToken.php b/app/Support/ApiToken.php
+--- a/app/Support/ApiToken.php
++++ b/app/Support/ApiToken.php
+@@ -54,9 +54,10 @@ class ApiToken
+         if (!is_array($header) || !is_array($payload)) {
+             return null;
+         }
+-        if (($header['alg'] ?? '') === 'none') {
+-            // VULNERABLE: unsecured tokens are accepted without verifying a signature.
+-            return $payload;
++        // Reject unsecured tokens: only HS256 is accepted, and a valid signature
++        // is always required. alg:none (or any non-HS256 alg) is refused.
++        if (($header['alg'] ?? '') !== 'HS256') {
++            return null;
+         }
+         $sig      = $parts[2] ?? '';
+         $expected = self::b64url(hash_hmac('sha256', "$h.$p", self::SECRET, true));

@@ -11,7 +11,7 @@ pub struct User {
     pub role: String,
 }
 
-// flag_3 (A04 cryptographic_failures): MD5 is a fast, unsalted checksum, not a
+// flag_3 (A02 cryptographic_failures): MD5 is a fast, unsalted checksum, not a
 // password hash, despite the column being named password_hash.
 pub fn hash_password(password: &str) -> String {
     format!("{:x}", md5::compute(password))
@@ -32,7 +32,15 @@ CREATE TABLE IF NOT EXISTS secrets (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     value TEXT NOT NULL,
-    owner TEXT NOT NULL
+    owner TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY,
+    owner TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    escalation_ref INTEGER
 );
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY,
@@ -58,6 +66,7 @@ pub fn init_db() -> DbPool {
 
 fn seed(pool: &DbPool) {
     let conn = pool.lock().unwrap();
+    let _ = conn.execute("ALTER TABLE secrets ADD COLUMN content TEXT NOT NULL DEFAULT ''", []);
 
     // Only flag_4 (the SQLi-reachable flag) is stored in the DB; the others are
     // served from env by their handlers so one UNION injection can't dump every
@@ -97,17 +106,36 @@ fn seed(pool: &DbPool) {
         .unwrap_or(0);
     if count == 0 {
         let secrets = [
-            ("stripe-prod", "sk_live_x9f2a7c1", "engineer"),
-            ("datadog-api", "dd_8h3k0p2m", "engineer"),
-            ("github-deploy", "ghp_q4w7e1r9", "admin"),
-            ("smtp-relay", "smtp_5t6y7u8i", "admin"),
-            ("s3-backups", "akia_2z3x4c5v", "engineer"),
-            ("pagerduty", "pd_9o8i7u6y", "readonly"),
+            ("stripe-prod", "sk_live_x9f2a7c1", "engineer", "Stripe production credential metadata used for billing jobs and recurring access review known plaintext."),
+            ("datadog-api", "dd_8h3k0p2m", "engineer", "Datadog API credential metadata used by platform telemetry collectors during known plaintext export checks."),
+            ("github-deploy", "ghp_q4w7e1r9", "admin", "GitHub deploy credential metadata restricted to release automation and admin-owned deployment workflows."),
+            ("smtp-relay", "smtp_5t6y7u8i", "admin", "SMTP relay credential metadata for transactional mail and operational notification routing."),
+            ("s3-backups", "akia_2z3x4c5v", "engineer", "S3 backup credential metadata for nightly vault export snapshots and archive validation jobs."),
+            ("pagerduty", "pd_9o8i7u6y", "readonly", "PagerDuty credential metadata visible to readonly support workflows and escalation routing."),
         ];
-        for (name, value, owner) in secrets {
+        for (name, value, owner, content) in secrets {
             conn.execute(
-                "INSERT INTO secrets (name, value, owner) VALUES (?1, ?2, ?3)",
-                params![name, value, owner],
+                "INSERT INTO secrets (name, value, owner, content) VALUES (?1, ?2, ?3, ?4)",
+                params![name, value, owner, content],
+            )
+            .unwrap();
+        }
+    }
+
+    let report_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM reports", [], |r| r.get(0))
+        .unwrap_or(0);
+    if report_count == 0 {
+        let reports = [
+            (1, "readonly", "Readonly access review", "Routine readonly report. Follow escalation_ref for privileged vault review.", Some(4)),
+            (2, "engineer", "Engineer rotation note", "Engineer rotation note for vault maintenance and credential reviews.", None),
+            (3, "vaulteng", "Vault engineer note", "Vault engineer operational note for secret inventory workflows.", None),
+            (4, "admin", "Escalation: vault root token", "Restricted vault escalation record. system_token=__FLAG_1__", None),
+        ];
+        for (id, owner, title, body, escalation_ref) in reports {
+            conn.execute(
+                "INSERT INTO reports (id, owner, title, body, escalation_ref) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, owner, title, body, escalation_ref],
             )
             .unwrap();
         }

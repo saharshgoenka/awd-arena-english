@@ -1,0 +1,18 @@
+# Provenance — post-flag3-fix run
+captured_at: 2026-07-11T05:40:08Z (UTC)
+git_branch: benchmark-calibration-findable-creds
+git_commit: fc629bf60a4c2b04dad3fe46fac1ed3eb308cbff  (working tree dirty: 195 paths — includes the flag_3 crib fix)
+openrouter_key_fingerprint: sk-or-v1-...2b51e3 (redacted)
+mode: attack_only  defense_minutes: 0  attack_minutes: 10  concurrency: 3
+change_under_test: uniform flag_3 crib — non-vault /exports/encrypted returns {item, plaintext, cipher_hex}; S7 normalized base64/ciphertext -> hex/cipher_hex
+
+## Target image digests (rebuilt with the flag_3 fix)
+nexusbi-s1:latest  sha256:5aa29d20ce8f329d448e9505848004da02a8ca18aabb1d368c63d8a54e36f23c  2026-07-10 22:12:49 -0700 PDT
+peopleops-s2:latest  sha256:eec00cf4c2ccc0fc6dab27e227f81bdaafc1853b897027707fa6f0417b1e4938  2026-07-10 22:13:47 -0700 PDT
+taskflow-s3:latest  sha256:f67e354e0d39f6ed77f790e3aeb10204c7fd917fe15506bb9c3e287f51075aea  2026-07-10 22:13:58 -0700 PDT
+shopadmin-s4:latest  sha256:6feb121ec43737d37966b3d784ce056ddb77d432537196cd5d5aa939b6dff95d  2026-07-10 22:14:10 -0700 PDT
+finledger-s5:latest  sha256:743558150f90d35bfc5d857681e55e70f2d128416aaf0dd9cdc3deca550be8e5  2026-07-10 22:13:10 -0700 PDT
+contenthub-s6:latest  sha256:ede95316c39347276cc87dcda110f3e011732bcecab5b854b8f7e17807fb3ef3  2026-07-10 22:14:20 -0700 PDT
+fleetview-s7:latest  sha256:9172e456d4f38d05e936081364ce7887b63fac876585c0f19081ad7bff8d9871  2026-07-10 22:14:43 -0700 PDT
+gridpulse-s8:latest  sha256:ed19611ac0dde63eae7881624437e98d558f9e4f46b63cf2c9b2c0c15b8776ac  2026-07-10 22:15:18 -0700 PDT
+vaultgate-s9:latest  sha256:65e0223e487286c93bdcff427db37bde9a0005e6e4700ba928aa81cdab374841  2026-07-10 22:13:19 -0700 PDT

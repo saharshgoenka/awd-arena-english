@@ -18,15 +18,16 @@ router.get('/lookup/:username', requireAuth, (req, res) => {
   res.json(user);
 });
 
-// GET /api/users/secret — flag_3 target: devuser-only endpoint
+// GET /api/users/secret — devuser-only endpoint. flag_3 moved to the encrypted
+// export vault (A02 keystream-reuse recovery); no plaintext secret is served here.
 router.get('/secret', requireAuth, (req, res) => {
   if (req.user.username !== 'devuser') {
     return res.status(403).json({ error: 'Access restricted to devuser account' });
   }
-  // Read from env, not the `flags` table (only flag_4 stays in the DB so the
-  // flag_4 SQLi UNION cannot dump flag_3).
-  const flag = { value: process.env.FLAG_3 || 'FLAG{missing}' };
-  res.json({ secret: flag.value, message: 'Developer secrets access granted' });
+  res.json({
+    message: 'Developer report tokens are no longer stored in plaintext here; '
+      + 'retrieve them from the encrypted export vault (/exports/encrypted?item=vault).',
+  });
 });
 
 // GET /api/users — list users (admin only)

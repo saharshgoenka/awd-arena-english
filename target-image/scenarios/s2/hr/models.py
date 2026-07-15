@@ -18,3 +18,15 @@ class Flag(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class PerformanceReport(models.Model):
+    # flag_1 (A01/BOLA): reachable by object id with no per-object owner check.
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    title = models.CharField(max_length=200)
+    body = models.TextField()
+    classification = models.CharField(max_length=20, default="standard")
+    reviewer_report_id = models.IntegerField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.title} ({self.owner.username})"

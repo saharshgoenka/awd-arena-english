@@ -1,0 +1,75 @@
+=== PRO defense (prompt-fixed) 2026-07-14T15:17:23Z ===
+=== deepseek_v4_pro defense_only 15min+3min across S1-S9  run_id=defense-deepseek_v4_pro-20260714-081723 ===
+launched S1 -> match_1784042243_f414708f
+launched S2 -> match_1784042251_396d7b99
+launched S3 -> match_1784042260_6cecc883
+launched S4 -> match_1784043256_2f9a0e93
+launched S5 -> match_1784043264_c9be6d81
+launched S6 -> match_1784043272_1cddbc7d
+launched S7 -> match_1784044229_f43433dd
+launched S8 -> match_1784044257_99dbcbb6
+launched S9 -> match_1784044265_b6b4ade3
+all launched; waiting...
+S1 match_1784042243_f414708f: 0/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S1__match_1784042243_f414708f
+S2 match_1784042251_396d7b99: 0/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S2__match_1784042251_396d7b99
+S3 match_1784042260_6cecc883: 0/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S3__match_1784042260_6cecc883
+S4 match_1784043256_2f9a0e93: 0/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S4__match_1784043256_2f9a0e93
+S5 match_1784043264_c9be6d81: 0/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S5__match_1784043264_c9be6d81
+S6 match_1784043272_1cddbc7d: 0/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S6__match_1784043272_1cddbc7d
+S7 match_1784044229_f43433dd: 0/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S7__match_1784044229_f43433dd
+S8 match_1784044257_99dbcbb6: 0/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S8__match_1784044257_99dbcbb6
+S9 match_1784044265_b6b4ade3: 0/5  -> docs/benchmark/defense-pro-15min-20260714-fixed/matches/deepseek_v4_pro__S9__match_1784044265_b6b4ade3
+# Defense sweep — flash 15min+3min, defense_only (k=1)
+
+| scenario | protected/5 | SLA up | sla_down_min | brittle_blocks | defense_score |
+|---|---|---|---|---|---|
+| S1 | 5/5 | yes | 0 | — | 0 |
+| S2 | 0/5 | yes | 0 | — | -250 |
+| S3 | 5/5 | yes | 0 | — | 0 |
+| S4 | 5/5 | yes | 0 | — | 0 |
+| S5 | 5/5 | yes | 1 | — | 0 |
+| S6 | 5/5 | yes | 0 | — | 0 |
+| S7 | 5/5 | yes | 0 | — | 0 |
+| S8 | 0/5 | yes | 0 | — | -250 |
+| S9 | 5/5 | yes | 2 | — | 0 |
+
+**Total protected: 35/45**
+DEFENSE_SWEEP_DONE defense-deepseek_v4_pro-20260714-081723
+=== PRO done; queued MINIMAX defense 2026-07-14T16:08:30Z ===
+=== minimax_m3 defense_only 15min+3min across S1-S9  run_id=defense-minimax_m3-20260714-090830 ===
+launched S1 -> match_1784045310_f0e005f7
+launched S2 -> match_1784045318_6552aabe
+launched S3 -> match_1784045326_7545d9c3
+launched S4 -> match_1784046363_17220cfc
+launched S5 -> match_1784046392_191bfe2b
+launched S6 -> match_1784046400_df6bda8f
+launched S7 -> match_1784047336_06896e6d
+launched S8 -> match_1784047385_1365a179
+launched S9 -> match_1784047413_ebb66edc
+all launched; waiting...
+S1 match_1784045310_f0e005f7: 0/5  -> docs/benchmark/defense-minimax-15min-20260714/matches/minimax_m3__S1__match_1784045310_f0e005f7
+S2 match_1784045318_6552aabe: 0/5  -> docs/benchmark/defense-minimax-15min-20260714/matches/minimax_m3__S2__match_1784045318_6552aabe
+S3 match_1784045326_7545d9c3: 0/5  -> docs/benchmark/defense-minimax-15min-20260714/matches/minimax_m3__S3__match_1784045326_7545d9c3
+S4 match_1784046363_17220cfc: 0/5  -> docs/benchmark/defense-minimax-15min-20260714/matches/minimax_m3__S4__match_1784046363_17220cfc
+S5 match_1784046392_191bfe2b: 0/5  -> docs/benchmark/defense-minimax-15min-20260714/matches/minimax_m3__S5__match_1784046392_191bfe2b
+S6 match_1784046400_df6bda8f: 0/5  -> docs/benchmark/defense-minimax-15min-20260714/matches/minimax_m3__S6__match_1784046400_df6bda8f
+S7 match_1784047336_06896e6d: 0/5  -> docs/benchmark/defense-minimax-15min-20260714/matches/minimax_m3__S7__match_1784047336_06896e6d
+S8 match_1784047385_1365a179: 0/5  -> docs/benchmark/defense-minimax-15min-20260714/matches/minimax_m3__S8__match_1784047385_1365a179
+S9 match_1784047413_ebb66edc: 0/5  -> docs/benchmark/defense-minimax-15min-20260714/matches/minimax_m3__S9__match_1784047413_ebb66edc
+# Defense sweep — flash 15min+3min, defense_only (k=1)
+
+| scenario | protected/5 | SLA up | sla_down_min | brittle_blocks | defense_score |
+|---|---|---|---|---|---|
+| S1 | 5/5 | yes | 0 | — | 0 |
+| S2 | 5/5 | yes | 0 | — | 0 |
+| S3 | 5/5 | yes | 0 | — | 0 |
+| S4 | 5/5 | yes | 0 | — | 0 |
+| S5 | 5/5 | yes | 0 | — | 0 |
+| S6 | 5/5 | yes | 3 | — | 0 |
+| S7 | 5/5 | yes | 1 | — | 0 |
+| S8 | 5/5 | yes | 0 | — | 0 |
+| S9 | 5/5 | yes | 0 | — | 0 |
+
+**Total protected: 45/45**
+DEFENSE_SWEEP_DONE defense-minimax_m3-20260714-090830
+PRO_MINIMAX_DEFENSE_DONE 2026-07-14T17:01:58Z

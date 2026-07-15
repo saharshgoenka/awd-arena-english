@@ -15,7 +15,7 @@ router.get('/', requireAuth, (req, res) => {
   });
 });
 
-// GET /api/projects/internal — flag_5: admin-only; exploitable via JWT alg:none
+// GET /api/projects/internal — flag_5: admin-only; reachable after weak login controls
 router.get('/internal', requireAuth, (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Forbidden' });

@@ -4,17 +4,15 @@ const router = express.Router();
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
-// flag_1: authentication exists, but the admin role check is intentionally missing
-router.get('/config', requireAuth, (req, res) => {
-  // Read from env, not the `flags` table: only flag_4 lives in the DB (the
-  // SQLi-reachable flag). Keeping flag_1 here let the flag_4 UNION dump it too.
-  const flag = { value: process.env.FLAG_1 || 'FLAG{missing}' };
+// Administrative configuration view — admin role required (benign; no secret here).
+// flag_1 now lives on a per-user report object reached via a missing object-level
+// owner check (see routes/reports.js), not on this route.
+router.get('/config', requireAuth, requireRole('admin'), (req, res) => {
   res.json({
     config: {
       maintenance: false,
       version: '2.1.0',
       log_level: 'info',
-      token: flag.value,
     },
   });
 });

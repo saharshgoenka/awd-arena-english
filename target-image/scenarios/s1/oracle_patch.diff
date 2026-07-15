@@ -1,118 +1,63 @@
 --- a/app.py
 +++ b/app.py
-@@ -5,6 +5,7 @@
+@@ -4,6 +4,7 @@
+ import base64
+ import hmac
+ import json
++import secrets
+ import os
  import sqlite3
  
- from flask import Flask, redirect, render_template_string, request, session
-+from werkzeug.security import check_password_hash, generate_password_hash
- 
- app = Flask(__name__)
- app.secret_key = "nexus-dev-secret-key-2024"
-@@ -167,7 +168,6 @@
- <body style="font-family:sans-serif;max-width:600px;margin:40px auto">
- <h2>Profile — {{ user['username'] }}</h2>
- <p><strong>Role:</strong> {{ user['role'] }}</p>
--<p><strong>Password hash:</strong> <code>{{ user['password_hash'] }}</code></p>
- <p><a href="/dashboard">Back to Dashboard</a></p>
- </body></html>"""
- 
-@@ -256,13 +256,13 @@
-     """)
-     c = conn.cursor()
-     for username, pw, role in [
--        ("admin",   "Nexus!2025",     "admin"),
--        ("analyst", "forecast7",      "user"),
-+        ("admin",   "z9Qw7Lk2Mhp4R8sT", "admin"),
-+        ("analyst", "V6nPq3xYb8Lm2rQ9", "user"),
-         ("viewer",  "viewer999",      "user"),
-     ]:
-         c.execute(
-             "INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)",
--            (username, _md5(pw), role),
-+            (username, generate_password_hash(pw), role),
-         )
-     for row in [
-         (1, "Q1 Revenue Summary",        "Total revenue for Q1 was $4.2M across all regions.",                         "admin"),
-@@ -338,29 +338,31 @@
- 
- # ── Auth ──────────────────────────────────────────────────────────────────────
- 
-+_failed_attempts: dict = {}  # ip -> consecutive failure count
-+
- @app.route("/login", methods=["GET", "POST"])
- def login():
-     error = None
-     if request.method == "POST":
-+        remote_ip = request.remote_addr or ""
-+        if _failed_attempts.get(remote_ip, 0) >= 5:
-+            return "Too many failed attempts. Try again later.", 429
-         username = request.form.get("username", "")
-         password = request.form.get("password", "")
-         conn = get_db()
--        user = conn.execute(
--            "SELECT * FROM users WHERE username=? AND password_hash=?",
--            (username, _md5(password)),
-+        row = conn.execute(
-+            "SELECT * FROM users WHERE username=?",
-+            (username,),
-         ).fetchone()
-         conn.close()
-+        user = row if row and check_password_hash(row["password_hash"], password) else None
-         if user:
-             session["username"] = user["username"]
-             session["role"] = user["role"]
-+            _failed_attempts.pop(remote_ip, None)
-             return redirect("/dashboard")
--        # VULNERABLE: different error messages enable username enumeration (flag_5 path)
--        conn2 = get_db()
--        exists = conn2.execute(
--            "SELECT 1 FROM users WHERE username=?", (username,)
--        ).fetchone()
--        conn2.close()
--        error = "Invalid password" if exists else "User not found"
-+        _failed_attempts[remote_ip] = _failed_attempts.get(remote_ip, 0) + 1
-+        error = "Invalid credentials"
-     return render_template_string(LOGIN_HTML, error=error)
+@@ -18,10 +19,19 @@
+ # target and an attacker need only stdlib XOR — no crypto library, no cracking.
+ _EXPORT_KEYSTREAM = hashlib.sha256(b"nexus-export-key-2024").digest() * 8  # 256 bytes, fixed
+ _TOKEN_SECRET = b"nexus-portal-signing-key-2024"
++_EXPORT_KEY = hashlib.sha256(b"nexus-export-key-2024").digest()
  
  
-@@ -415,6 +417,8 @@
+ def _xor_export(pt: bytes) -> str:
+-    return bytes(b ^ _EXPORT_KEYSTREAM[i] for i, b in enumerate(pt)).hex()
++    nonce = secrets.token_bytes(16)
++    out = b""
++    counter = 0
++    while len(out) < len(pt):
++        out += hashlib.sha256(_EXPORT_KEY + nonce + counter.to_bytes(4, "big")).digest()
++        counter += 1
++    ks = out[:len(pt)]
++    ct = bytes(b ^ ks[i] for i, b in enumerate(pt))
++    return (nonce + ct).hex()
  
- @app.route("/admin/panel")
- def admin_panel():
-+    if session.get("role") != "admin":
+ 
+ def _b64url(raw: bytes) -> str:
+@@ -46,8 +56,8 @@
+         header = json.loads(_b64url_decode(header_b64))
+         payload = json.loads(_b64url_decode(payload_b64))
+         if header.get("alg") == "none":
+-            # VULNERABLE: unsigned tokens are accepted, enabling role forgery.
+-            return payload
++            # FIX (A07): reject unsigned/unsecured tokens.
++            return None
+         if header.get("alg") != "HS256":
+             return None
+         expected = _b64url(hmac.new(
+@@ -477,6 +487,8 @@
+     conn.close()
+     if not row:
+         return "Report not found", 404
++    if row["owner"] != session["username"]:
 +        return "Forbidden", 403
-     if "username" not in session:
-         return redirect("/login")
-     flag = get_flag("flag_1")
-@@ -426,17 +430,7 @@
+     row = dict(row)
+     row["content"] = row["content"].replace("__FLAG_1__", get_flag("flag_1"))
+     return render_template_string(
+@@ -531,6 +543,7 @@
  
- @app.route("/support/diagnostics")
- def support_diagnostics():
--    return {
--        "service": "NexusBI support diagnostics",
--        "generated_by": "support-bundle-preview",
--        "preview": {
--            "mail_relay_password": get_flag("flag_2"),
--        },
--        "notes": [
--            "Sanitize support exports before sharing externally.",
--            "Only the latest bundle preview is shown here.",
--        ],
--    }
-+    return "Not Found", 404
- 
- 
- # ── flag_3: A04 Cryptographic Failures ────────────────────────────────────────
-@@ -459,6 +453,8 @@
- def team_audit():
-     if "username" not in session:
-         return redirect("/login")
-+    if session.get("role") != "admin":
-+        return "Forbidden", 403
-     conn = get_db()
-     users = conn.execute(
-         "SELECT username, role, password_hash FROM users ORDER BY id"
-@@ -488,9 +484,9 @@
+ @app.route("/debug/env")
+ def debug_env():
++    return {"error": "debug diagnostics disabled"}, 404
+     flag_2 = get_flag("flag_2")
+     return {
+         "service": "NexusBI debug environment",
+@@ -606,9 +619,9 @@
  def data_search():
      q = request.args.get("q", "")
      conn = get_db()

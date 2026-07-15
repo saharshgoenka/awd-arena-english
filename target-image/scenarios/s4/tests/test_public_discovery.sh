@@ -37,14 +37,20 @@ for text in "ShopAdmin" "status" "help" "about" "api"; do
   assert_contains "$HOME" "$text"
 done
 
+for assisted_route in \
+  "/admin/orders/report" \
+  "/products/search?q=term" \
+  "/reports/mine" \
+  "/reports/{id}" \
+  "/exports/encrypted?item=<id|vault>"
+do
+  assert_contains "$DISCOVERY" "$assisted_route"
+done
+
 for path in "$DISCOVERY" "$HOME"; do
   assert_not_contains "$path" "flag_"
   assert_not_contains "$path" "FLAG_"
-  assert_not_contains "$path" "admin/panel"
-  assert_not_contains "$path" "debug/phpinfo"
-  assert_not_contains "$path" "secret-vault"
   assert_not_contains "$path" "legacy-token"
-  assert_not_contains "$path" "orders/report"
   assert_not_contains "$path" "SQL"
   assert_not_contains "$path" "MD5"
 done

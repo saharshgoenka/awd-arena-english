@@ -33,9 +33,18 @@ grep -q "vehicles" "$TMP_DIR/api.json"
 grep -q "authentication" "$TMP_DIR/api.json"
 grep -q '"status":"ok"' "$TMP_DIR/status.json"
 
-if grep -R -E 'FLAG[{]|fleetadmin2024|dispatch456|fleet123|/debug/env|/admin/settings|/profile/vault' "$TMP_DIR"; then
+grep -q "/exports/encrypted" "$TMP_DIR/api.json"
+grep -q "Operational diagnostics are not listed" "$TMP_DIR/api.json"
+grep -q "dispatcher / dispatch456" "$TMP_DIR/help.html"
+
+if grep -q "/debug/env" "$TMP_DIR/api.json"; then
+  echo "[FAIL] API discovery advertises the debug env path"
+  exit 1
+fi
+
+if grep -R -E 'FLAG[{]|fleetadmin2024|fleet123' "$TMP_DIR"; then
   echo "[FAIL] discovery surface leaked sensitive implementation details"
   exit 1
 fi
 
-echo "[PASS] S7 discovery surfaces are reachable and non-spoiling."
+echo "[PASS] S7 assisted discovery surfaces are reachable and bounded."
