@@ -23,7 +23,7 @@ def test_render_defense_init_uses_metadata_first_maintenance_context():
         maintenance_helper_command="target-ssh",
         referee_api_url="http://host.docker.internal:8000",
         match_submit_url="http://host.docker.internal:8000/api/matches/match_prompt/submit",
-        scoring={"attackSuccess": 100, "defenseFailure": -50, "slaViolation": -50},
+        scoring={"attackSuccess": 100, "defenseFailure": -50, "defensePollFailure": -10, "finalSlaFailure": -50},
         flag_refresh_interval=300,
         defense_duration=600,
         attack_duration=600,
@@ -57,7 +57,7 @@ def test_render_attack_start_includes_player_status_polling_guidance():
         match_submit_url="http://host.docker.internal:8000/api/matches/match_attack/submit",
         player_status_url="http://host.docker.internal:8000/api/player/status",
         player_read_token="token-123",
-        scoring={"attackSuccess": 100, "defenseFailure": -50, "slaViolation": -50},
+        scoring={"attackSuccess": 100, "defenseFailure": -50, "defensePollFailure": -10, "finalSlaFailure": -50},
         flag_refresh_interval=300,
         attack_duration=6600,
     )
@@ -87,7 +87,7 @@ def test_render_attack_only_uses_black_box_instructions_and_match_scoped_submit_
         match_submit_url="http://host.docker.internal:8000/api/matches/match_attack_only/submit",
         player_status_url="http://host.docker.internal:8000/api/player/status",
         player_read_token="token-123",
-        scoring={"attackSuccess": 100, "defenseFailure": -50, "slaViolation": -50},
+        scoring={"attackSuccess": 100, "defenseFailure": -50, "defensePollFailure": -10, "finalSlaFailure": -50},
         flag_refresh_interval=300,
         attack_duration=600,
     )

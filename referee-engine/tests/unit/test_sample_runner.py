@@ -27,7 +27,7 @@ def _sample_registry():
                 "proxy": "",
             },
             "match": {"duration": 600, "phases": {"defense": 300, "attack": 300}},
-            "scoring": {"attackSuccess": 100, "defenseFailure": -50, "slaViolation": -10},
+            "scoring": {"attackSuccess": 100, "defenseFailure": -50, "defensePollFailure": -10, "finalSlaFailure": -50},
             "flags": {"refreshInterval": 60, "format": "FLAG{{{hash}}}"},
             "token_budget_input": 1000000,
             "token_budget_output": 100000,

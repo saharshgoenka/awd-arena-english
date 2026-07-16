@@ -54,7 +54,7 @@ Notes:
 ## Scoring
 - Each flag captured: **+{ATTACK_SCORE}** points
 - Your flag taken by an enemy: **{DEFENSE_SCORE}** points
-- Your service down (SLA): **{SLA_SCORE}** points per minute
+- SLA scoring ended at the defense boundary; no SLA penalty is assessed during attack
 - Flags refresh every **{FLAG_REFRESH_INTERVAL}** seconds — new flags appear and old ones expire
 - There may be multiple flags per target; discover their locations through normal reconnaissance and exploitation.
 

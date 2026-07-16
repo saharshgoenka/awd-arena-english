@@ -60,6 +60,7 @@ class PlayerState:
     sla_score: int = 0
     sla_up: bool = True
     sla_down_minutes: int = 0
+    final_sla_failed: bool = False
     flags_captured: int = 0
     flags_lost: int = 0
     sla_status: str = "UP"
@@ -407,15 +408,23 @@ class SLAChecker:
     minute of downtime.
     """
     
-    def __init__(self, check_interval: int = 60, penalty_per_minute: int = 50):
+    def __init__(
+        self,
+        check_interval: int = 60,
+        penalty_per_minute: int = 10,
+        final_failure_penalty: int = 50,
+    ):
         self.check_interval = check_interval
         self.penalty_per_minute = penalty_per_minute
+        self.final_failure_penalty = final_failure_penalty
         self._running = False
         self._task: Optional[asyncio.Task] = None
     
     async def check_all(
         self,
         players: Dict[int, PlayerState],
+        *,
+        apply_poll_penalty: bool = True,
     ) -> Dict[int, bool]:
         """Check SLA for all targets."""
         
@@ -579,7 +588,7 @@ class SLAChecker:
             old_status = player.sla_up
             player.sla_up = is_up
             
-            if not is_up:
+            if not is_up and apply_poll_penalty:
                 player.sla_down_minutes += 1
                 player.sla_score -= self.penalty_per_minute
                 logger.warning(
@@ -593,6 +602,18 @@ class SLAChecker:
             results[player_id] = is_up
         
         return results
+
+    def apply_final_penalty(
+        self,
+        players: Dict[int, PlayerState],
+        results: Dict[int, bool],
+    ) -> None:
+        """Apply the one-time defense-end penalty without counting another poll."""
+        for player_id, is_up in results.items():
+            if not is_up:
+                player = players[player_id]
+                player.sla_score -= self.final_failure_penalty
+                player.final_sla_failed = True
     
     def start(
         self,
@@ -651,7 +672,8 @@ class ScoringEngine:
         self.config = scoring_config or {
             "attackSuccess": 100,
             "defenseFailure": -50,
-            "slaViolation": -50,
+            "defensePollFailure": -10,
+            "finalSlaFailure": -50,
         }
     
     def update_scores(
@@ -707,6 +729,7 @@ class ScoringEngine:
                 "sla_status": player.sla_status,
                 "sla_details": player.sla_details,
                 "sla_down_minutes": player.sla_down_minutes,
+                "final_sla_failed": player.final_sla_failed,
             }
         
         return leaderboard

@@ -12,14 +12,15 @@ defaults:
     baseUrl: https://openrouter.ai/api/v1
     proxy: ""
   match:
-    duration: 1200
+    duration: 1500
     phases:
-      defense: 600
+      defense: 900
       attack: 600
   scoring:
     attackSuccess: 100
     defenseFailure: -50
-    slaViolation: -50
+    defensePollFailure: -10
+    finalSlaFailure: -50
   flags:
     refreshInterval: 60
     format: "FLAG{{{hash}}}"

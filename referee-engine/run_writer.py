@@ -182,7 +182,7 @@ def _scoring_config(config) -> Dict[str, Any]:
     scoring = getattr(config, "scoring", None)
     if scoring is None:
         return {}
-    keys = ("attackSuccess", "defenseFailure", "slaViolation")
+    keys = ("attackSuccess", "defenseFailure", "defensePollFailure", "finalSlaFailure")
     if isinstance(scoring, dict):
         return {k: scoring.get(k) for k in keys}
     return {k: getattr(scoring, k, None) for k in keys}

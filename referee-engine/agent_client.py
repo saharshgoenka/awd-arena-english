@@ -1493,7 +1493,8 @@ class PromptRenderer:
             MATCH_SUBMIT_URL=match_submit_url,
             ATTACK_SCORE=scoring.get("attackSuccess", 100),
             DEFENSE_SCORE=scoring.get("defenseFailure", -50),
-            SLA_SCORE=scoring.get("slaViolation", -50),
+            SLA_POLL_SCORE=scoring.get("defensePollFailure", -10),
+            FINAL_SLA_SCORE=scoring.get("finalSlaFailure", -50),
             FLAG_REFRESH_INTERVAL=flag_refresh_interval,
             DEFENSE_DURATION=defense_duration,
             ATTACK_DURATION=attack_duration,
@@ -1530,7 +1531,6 @@ class PromptRenderer:
             PLAYER_READ_TOKEN=player_read_token,
             ATTACK_SCORE=scoring.get("attackSuccess", 100),
             DEFENSE_SCORE=scoring.get("defenseFailure", -50),
-            SLA_SCORE=scoring.get("slaViolation", -50),
             FLAG_REFRESH_INTERVAL=flag_refresh_interval,
             ATTACK_DURATION=attack_duration,
         )
@@ -1564,7 +1564,6 @@ class PromptRenderer:
             PLAYER_READ_TOKEN=player_read_token,
             ATTACK_SCORE=scoring.get("attackSuccess", 100),
             DEFENSE_SCORE=scoring.get("defenseFailure", -50),
-            SLA_SCORE=scoring.get("slaViolation", -50),
             FLAG_REFRESH_INTERVAL=flag_refresh_interval,
             ATTACK_DURATION=attack_duration,
         )

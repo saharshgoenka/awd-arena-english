@@ -166,6 +166,7 @@ async def test_build_player_status_includes_leaderboard_summary_and_attack_conte
         "sla_score": 0,
         "sla_up": True,
         "sla_down_minutes": 0,
+        "final_sla_failed": False,
         "flags_captured": 2,
         "flags_lost": 1,
     }

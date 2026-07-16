@@ -5,6 +5,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -74,7 +75,7 @@ def _minimal_config_dict():
             {"id": 1, "name": "P1", "model": None, "apiKey": None, "gatewayPort": None},
             {"id": 2, "name": "P2", "model": None, "apiKey": None, "gatewayPort": None},
         ],
-        "scoring": {"attackSuccess": 100, "defenseFailure": -50, "slaViolation": -50},
+        "scoring": {"attackSuccess": 100, "defenseFailure": -50, "defensePollFailure": -10, "finalSlaFailure": -50},
         "flags": {"refreshInterval": 300, "format": "flag{{{hash}}}"},
         "network": {"arenaSubnet": "172.20.0.0/16", "mgmtSubnetPrefix": "172.21"},
         "target_image": "openclaw/ctf-target:v1",
@@ -216,10 +217,10 @@ def test_sample_sla_probe_config_uses_valid_login_contracts(monkeypatch):
     module = _load_main_module("test_main_sla_probe_config")
 
     cases = {
-        "S7": ("/health", "/login", "POST", {"username": "driver", "password": "fleet123"}),
-        "S8": ("/health", "/login", "POST", {"username": "operator", "password": "operator789"}),
-        "S9": ("/health", "/api/auth/login", "POST", {"username": "engineer", "password": "password123"}),
-        "S3": ("/health", None, "GET", None),
+        "S7": ("/health", "/login", "json", {"username": "dispatcher", "password": "dispatch456"}),
+        "S8": ("/health", "/login", "json", {"username": "viewer", "password": "view123"}),
+        "S9": ("/health", "/api/auth/login", "json", {"username": "readonly", "password": "readonly789"}),
+        "S3": ("/health", "/auth/login", "json", {"username": "manager", "password": "manager456"}),
     }
 
     for scenario, expected in cases.items():
@@ -256,6 +257,69 @@ async def test_sla_checker_posts_configured_login_probe(monkeypatch):
     assert "/login" in commands[1]
     assert "POST" in commands[1]
     assert "operator789" in commands[1]
+
+
+@pytest.mark.asyncio
+async def test_sla_final_check_adds_one_final_penalty_without_another_poll_penalty(monkeypatch):
+    class FailingProc:
+        returncode = 1
+
+        async def communicate(self):
+            return b"", b"service unavailable"
+
+    async def fake_subprocess_shell(*args, **kwargs):
+        return FailingProc()
+
+    monkeypatch.setattr("asyncio.create_subprocess_shell", fake_subprocess_shell)
+
+    player = PlayerState(player_id=1, container_name="c1", target_container="target1", target_ip="10.0.0.1")
+    checker = SLAChecker(
+        check_interval=60,
+        penalty_per_minute=10,
+        final_failure_penalty=50,
+    )
+
+    # A failed defense-phase poll is worth -10.
+    results = await checker.check_all({1: player})
+    assert results == {1: False}
+    assert player.sla_down_minutes == 1
+    assert player.sla_score == -10
+
+    # The final defense-end probe records failure but does not count as another
+    # per-minute outage; it adds exactly one -50 final penalty.
+    final_results = await checker.check_all({1: player}, apply_poll_penalty=False)
+    checker.apply_final_penalty({1: player}, final_results)
+
+    assert player.sla_down_minutes == 1
+    assert player.sla_score == -60
+
+
+@pytest.mark.asyncio
+async def test_defense_end_applies_one_final_sla_penalty_before_attack(monkeypatch):
+    monkeypatch.setattr("asyncio.create_subprocess_shell", lambda *args, **kwargs: None)
+    module = _load_main_module("test_main_defense_end_sla")
+    config = module.MatchConfig(players=[module.PlayerConfig(id=1, name="P1")])
+    match = module.MatchState("match_defense_end_sla", config)
+    match.players[1] = PlayerState(
+        player_id=1,
+        container_name="c1",
+        target_container="target1",
+        target_ip="10.0.0.1",
+    )
+    player = match.players[1]
+    match.sla_checker.stop = lambda: None
+    match.sla_checker.check_all = AsyncMock(return_value={1: False})
+
+    await module.referee._finish_defense_sla(match)
+
+    match.sla_checker.check_all.assert_awaited_once_with(
+        match.players,
+        apply_poll_penalty=False,
+    )
+    assert player.sla_down_minutes == 0
+    assert player.sla_score == -50
+    assert match.events[-1]["type"] == "SLA_FINAL_CHECK"
+    assert match.events[-1]["data"]["results"] == {"1": False}
 
 
 def test_agent_stream_activity_extracts_readable_openclaw_events(monkeypatch):
@@ -651,7 +715,7 @@ def test_scoring_engine_uses_passed_submission_source_only():
         1: PlayerState(player_id=1, container_name="c1", target_container="t1", target_ip="10.0.0.1"),
         2: PlayerState(player_id=2, container_name="c2", target_container="t2", target_ip="10.0.0.2"),
     }
-    scoring = ScoringEngine({"attackSuccess": 100, "defenseFailure": -50, "slaViolation": -50})
+    scoring = ScoringEngine({"attackSuccess": 100, "defenseFailure": -50, "defensePollFailure": -10, "finalSlaFailure": -50})
     submissions = [
         _build_submission(attacker_id=1, victim_id=2, success=True, timestamp="2026-03-27T10:00:00", points=100),
         _build_submission(attacker_id=1, victim_id=2, success=False, timestamp="2026-03-27T10:00:01", reason="target_mismatch", points=0),

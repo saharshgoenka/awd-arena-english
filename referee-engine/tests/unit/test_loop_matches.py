@@ -46,7 +46,7 @@ def _loop_config_payload(repeat_count: int = 3):
         "players": [
             {"id": 1, "name": "P1", "model": None, "apiKey": None, "gatewayPort": None},
         ],
-        "scoring": {"attackSuccess": 100, "defenseFailure": -50, "slaViolation": -50},
+        "scoring": {"attackSuccess": 100, "defenseFailure": -50, "defensePollFailure": -10, "finalSlaFailure": -50},
         "flags": {"refreshInterval": 300, "format": "flag{{{hash}}}"},
         "network": {"arenaSubnet": "172.20.0.0/16", "mgmtSubnetPrefix": "172.21"},
         "target_image": "openclaw/ctf-target:v1",

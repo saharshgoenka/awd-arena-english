@@ -25,7 +25,8 @@
   "scoring": {
     "attackSuccess": 100,
     "defenseFailure": -50,
-    "slaViolation": -50
+    "defensePollFailure": -10,
+    "finalSlaFailure": -50
   },
   "flags": {
     "refreshInterval": 300,

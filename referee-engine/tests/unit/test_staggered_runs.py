@@ -57,7 +57,7 @@ def _match_payload(name: str, scenario_id: str = "S1", mode: str = "defense_only
             "model": "deepseek/deepseek-v4-flash",
         },
         "players": players,
-        "scoring": {"attackSuccess": 100, "defenseFailure": -50, "slaViolation": -10},
+        "scoring": {"attackSuccess": 100, "defenseFailure": -50, "defensePollFailure": -10, "finalSlaFailure": -50},
         "flags": {"refreshInterval": 60, "format": "FLAG{{{hash}}}"},
         "target_image": f"{scenario_id.lower()}-target:latest",
         "agent_image": "openclaw/awd-openclaw-agent:latest",
